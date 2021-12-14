@@ -42,25 +42,21 @@ impl<T: eclipse::ProofGenerator> VoteCollector<T> {
         let votes_basket = self
             .votes
             .entry(slot)
-            .or_insert(VoteBasket::Votes(Vec::new()));
+            .or_insert_with(|| VoteBasket::Votes(Vec::new()));
 
-        match votes_basket {
-            VoteBasket::Votes(ref mut votes) => {
-                votes.push(vote);
-                if votes.len() >= self.seal_threshold {
-                    if self
-                        .proof_generator
-                        .generate_proof(slot, votes.clone())
-                        .is_ok()
-                    {
-                        // TODO(tuommaki): Once slot has been processed, it's marked as Full and
-                        // collected votes are dropped, but there's no GC to eventually clean up
-                        // entries from the tree.
-                        self.votes.insert(slot, VoteBasket::Full);
-                    }
-                }
+        if let VoteBasket::Votes(ref mut votes) = votes_basket {
+            votes.push(vote);
+            if votes.len() >= self.seal_threshold
+                && self
+                    .proof_generator
+                    .generate_proof(slot, votes.clone())
+                    .is_ok()
+            {
+                // TODO(tuommaki): Once slot has been processed, it's marked as Full and
+                // collected votes are dropped, but there's no GC to eventually clean up
+                // entries from the tree.
+                self.votes.insert(slot, VoteBasket::Full);
             }
-            _ => (),
         }
     }
 }
@@ -85,17 +81,19 @@ impl<T: eclipse::ProofGenerator> BlockProcessor<T> {
         let mut current_slot = start_slot;
 
         for _ in Ticker::new(0.., poll_interval) {
-            let current_block_height = self.client.get_block_height().unwrap();
+            let current_network_slot = self.client.get_slot().unwrap();
             if current_slot == 0 {
-                current_slot = current_block_height;
-            } else if current_slot > current_block_height {
-                println!("latest block processed, skipping");
+                current_slot = current_network_slot;
+            } else if current_slot > current_network_slot {
+                println!("latest slot processed, skipping");
                 continue;
+            } else {
+                current_slot += 1;
             }
 
             println!(
-                "current block height: {}, processing block {}",
-                current_block_height, current_slot
+                "current network slot: {}, processing slot {}",
+                current_network_slot, current_slot
             );
 
             let blk_cfg = RpcBlockConfig {
@@ -108,7 +106,12 @@ impl<T: eclipse::ProofGenerator> BlockProcessor<T> {
             let txs: Vec<_> = match self.client.get_block_with_config(current_slot, blk_cfg) {
                 Ok(blk) => match blk.transactions {
                     Some(transactions) => {
-                        println!("found block with {} transactions", transactions.len());
+                        println!(
+                            "found block {} from parent slot {} with {} transactions",
+                            blk.block_height.unwrap(),
+                            blk.parent_slot,
+                            transactions.len()
+                        );
 
                         transactions
                             .into_iter()
@@ -125,7 +128,6 @@ impl<T: eclipse::ProofGenerator> BlockProcessor<T> {
                         ClientErrorKind::RpcError(RpcError::RpcResponseError { code, .. }) => {
                             if code == JSON_RPC_SERVER_ERROR_LONG_TERM_STORAGE_SLOT_SKIPPED {
                                 println!("slot {} skipped, proceeding to next", current_slot);
-                                current_slot += 1;
                             }
                         }
                         _ => {
@@ -139,28 +141,22 @@ impl<T: eclipse::ProofGenerator> BlockProcessor<T> {
 
             println!("{} transactions decoded", txs.len());
             self.process_slot_transactions(current_slot, &txs);
-
-            current_slot += 1;
         }
     }
 
-    fn process_slot_transactions(&mut self, slot: Slot, txs: &Vec<Transaction>) {
+    fn process_slot_transactions(&mut self, slot: Slot, txs: &[Transaction]) {
         // Filter Vote Program transactions.
-        let txs = txs.into_iter().filter_map(|tx| {
-            if (&tx.message.instructions).into_iter().any(|ci| {
+        let txs = txs.iter().filter(|tx| {
+            (&tx.message.instructions).iter().any(|ci| {
                 tx.message.account_keys[usize::from(ci.program_id_index)] == vote::program::id()
-            }) {
-                Some(tx)
-            } else {
-                None
-            }
+            })
         });
 
         txs.into_iter().for_each(|tx| {
             let msg = tx.message.serialize();
 
             tx.message.signer_keys().into_iter().for_each(|sk| {
-                (&tx.signatures).into_iter().for_each(|sig| {
+                (&tx.signatures).iter().for_each(|sig| {
                     if sig.verify(sk.as_ref(), &msg) {
                         println!("successfully verified signature; adding to slot signatures");
                         self.slot_votes.push_vote(

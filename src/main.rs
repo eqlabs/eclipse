@@ -16,12 +16,12 @@ fn main() {
         .about(crate_description!())
         .version(crate_version!())
         .arg(
-            Arg::with_name("block_height")
-                .long("block_height")
-                .value_name("BLOCK HEIGHT")
+            Arg::with_name("slot")
+                .long("slot_number")
+                .value_name("SLOT")
                 .takes_value(true)
                 .validator(is_u64)
-                .help("Initial block height to process from"),
+                .help("Initial slot to process from; skipped if slot does not have a block"),
         )
         .arg(
             Arg::with_name("json_rpc_url")
@@ -57,7 +57,7 @@ fn main() {
     let confirmation_threshold = usize::from_str(matches.value_of("threshold").unwrap()).unwrap();
     let client = RpcClient::new(url.to_string());
 
-    let start_slot = match matches.value_of("block_height") {
+    let start_slot = match matches.value_of("slot") {
         Some(bh) => u64::from_str(bh).unwrap(),
         None => 0,
     };
