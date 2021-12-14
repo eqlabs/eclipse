@@ -42,25 +42,21 @@ impl<T: eclipse::ProofGenerator> VoteCollector<T> {
         let votes_basket = self
             .votes
             .entry(slot)
-            .or_insert(VoteBasket::Votes(Vec::new()));
+            .or_insert_with(|| VoteBasket::Votes(Vec::new()));
 
-        match votes_basket {
-            VoteBasket::Votes(ref mut votes) => {
-                votes.push(vote);
-                if votes.len() >= self.seal_threshold {
-                    if self
-                        .proof_generator
-                        .generate_proof(slot, votes.clone())
-                        .is_ok()
-                    {
-                        // TODO(tuommaki): Once slot has been processed, it's marked as Full and
-                        // collected votes are dropped, but there's no GC to eventually clean up
-                        // entries from the tree.
-                        self.votes.insert(slot, VoteBasket::Full);
-                    }
-                }
+        if let VoteBasket::Votes(ref mut votes) = votes_basket {
+            votes.push(vote);
+            if votes.len() >= self.seal_threshold
+                && self
+                    .proof_generator
+                    .generate_proof(slot, votes.clone())
+                    .is_ok()
+            {
+                // TODO(tuommaki): Once slot has been processed, it's marked as Full and
+                // collected votes are dropped, but there's no GC to eventually clean up
+                // entries from the tree.
+                self.votes.insert(slot, VoteBasket::Full);
             }
-            _ => (),
         }
     }
 }
@@ -148,23 +144,19 @@ impl<T: eclipse::ProofGenerator> BlockProcessor<T> {
         }
     }
 
-    fn process_slot_transactions(&mut self, slot: Slot, txs: &Vec<Transaction>) {
+    fn process_slot_transactions(&mut self, slot: Slot, txs: &[Transaction]) {
         // Filter Vote Program transactions.
-        let txs = txs.into_iter().filter_map(|tx| {
-            if (&tx.message.instructions).into_iter().any(|ci| {
+        let txs = txs.iter().filter(|tx| {
+            (&tx.message.instructions).iter().any(|ci| {
                 tx.message.account_keys[usize::from(ci.program_id_index)] == vote::program::id()
-            }) {
-                Some(tx)
-            } else {
-                None
-            }
+            })
         });
 
         txs.into_iter().for_each(|tx| {
             let msg = tx.message.serialize();
 
             tx.message.signer_keys().into_iter().for_each(|sk| {
-                (&tx.signatures).into_iter().for_each(|sig| {
+                (&tx.signatures).iter().for_each(|sig| {
                     if sig.verify(sk.as_ref(), &msg) {
                         println!("successfully verified signature; adding to slot signatures");
                         self.slot_votes.push_vote(
