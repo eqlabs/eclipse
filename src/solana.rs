@@ -85,17 +85,19 @@ impl<T: eclipse::ProofGenerator> BlockProcessor<T> {
         let mut current_slot = start_slot;
 
         for _ in Ticker::new(0.., poll_interval) {
-            let current_block_height = self.client.get_block_height().unwrap();
+            let current_network_slot = self.client.get_slot().unwrap();
             if current_slot == 0 {
-                current_slot = current_block_height;
-            } else if current_slot > current_block_height {
-                println!("latest block processed, skipping");
+                current_slot = current_network_slot;
+            } else if current_slot > current_network_slot {
+                println!("latest slot processed, skipping");
                 continue;
+            } else {
+                current_slot += 1;
             }
 
             println!(
-                "current block height: {}, processing block {}",
-                current_block_height, current_slot
+                "current network slot: {}, processing slot {}",
+                current_network_slot, current_slot
             );
 
             let blk_cfg = RpcBlockConfig {
@@ -108,7 +110,12 @@ impl<T: eclipse::ProofGenerator> BlockProcessor<T> {
             let txs: Vec<_> = match self.client.get_block_with_config(current_slot, blk_cfg) {
                 Ok(blk) => match blk.transactions {
                     Some(transactions) => {
-                        println!("found block with {} transactions", transactions.len());
+                        println!(
+                            "found block {} from parent slot {} with {} transactions",
+                            blk.block_height.unwrap(),
+                            blk.parent_slot,
+                            transactions.len()
+                        );
 
                         transactions
                             .into_iter()
@@ -125,7 +132,6 @@ impl<T: eclipse::ProofGenerator> BlockProcessor<T> {
                         ClientErrorKind::RpcError(RpcError::RpcResponseError { code, .. }) => {
                             if code == JSON_RPC_SERVER_ERROR_LONG_TERM_STORAGE_SLOT_SKIPPED {
                                 println!("slot {} skipped, proceeding to next", current_slot);
-                                current_slot += 1;
                             }
                         }
                         _ => {
@@ -139,8 +145,6 @@ impl<T: eclipse::ProofGenerator> BlockProcessor<T> {
 
             println!("{} transactions decoded", txs.len());
             self.process_slot_transactions(current_slot, &txs);
-
-            current_slot += 1;
         }
     }
 
