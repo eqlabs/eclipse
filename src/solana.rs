@@ -1,4 +1,5 @@
 use {
+    crate::eclipse,
     solana_client::{
         client_error::{ClientError, ClientErrorKind},
         rpc_client::RpcClient,
@@ -7,47 +8,29 @@ use {
         rpc_request::RpcError,
     },
     solana_sdk::{
-        clock::Slot, commitment_config::CommitmentConfig, signature::Signature,
-        transaction::Transaction, vote,
+        clock::Slot, commitment_config::CommitmentConfig, transaction::Transaction, vote,
     },
     solana_transaction_status::{EncodedTransaction, TransactionDetails, UiTransactionEncoding},
-    std::{collections::BTreeMap, sync::mpsc, time::Duration, vec::Vec},
+    std::{collections::BTreeMap, time::Duration, vec::Vec},
     ticker::Ticker,
 };
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Vote {
-    signature: Signature,
-    pub_key: Vec<u8>,
-    message: Vec<u8>,
-}
-
-impl Vote {
-    pub fn new(sig: Signature, p_key: Vec<u8>, msg: Vec<u8>) -> Self {
-        Vote {
-            signature: sig,
-            pub_key: p_key,
-            message: msg,
-        }
-    }
-}
-
 enum VoteBasket {
-    Votes(Vec<Vote>),
+    Votes(Vec<eclipse::Vote>),
     Full,
 }
 
-pub struct VoteCollector {
+pub struct VoteCollector<T>
+where
+    T: eclipse::ProofGenerator,
+{
     seal_threshold: usize,
-    proof_generator: mpsc::Sender<(Slot, Vec<Vote>)>,
+    proof_generator: T,
     votes: BTreeMap<Slot, VoteBasket>,
 }
 
-impl VoteCollector {
-    pub fn new(
-        proof_generation_threshold: usize,
-        proof_generator: mpsc::Sender<(Slot, Vec<Vote>)>,
-    ) -> Self {
+impl<T: eclipse::ProofGenerator> VoteCollector<T> {
+    pub fn new(proof_generation_threshold: usize, proof_generator: T) -> Self {
         VoteCollector {
             seal_threshold: proof_generation_threshold,
             proof_generator,
@@ -55,7 +38,7 @@ impl VoteCollector {
         }
     }
 
-    fn push_vote(&mut self, slot: Slot, vote: Vote) {
+    fn push_vote(&mut self, slot: Slot, vote: eclipse::Vote) {
         let votes_basket = self
             .votes
             .entry(slot)
@@ -65,7 +48,11 @@ impl VoteCollector {
             VoteBasket::Votes(ref mut votes) => {
                 votes.push(vote);
                 if votes.len() >= self.seal_threshold {
-                    if self.proof_generator.send((slot, votes.clone())).is_ok() {
+                    if self
+                        .proof_generator
+                        .generate_proof(slot, votes.clone())
+                        .is_ok()
+                    {
                         // TODO(tuommaki): Once slot has been processed, it's marked as Full and
                         // collected votes are dropped, but there's no GC to eventually clean up
                         // entries from the tree.
@@ -78,13 +65,16 @@ impl VoteCollector {
     }
 }
 
-pub struct BlockProcessor {
+pub struct BlockProcessor<T>
+where
+    T: eclipse::ProofGenerator,
+{
     client: RpcClient,
-    slot_votes: VoteCollector,
+    slot_votes: VoteCollector<T>,
 }
 
-impl BlockProcessor {
-    pub fn new(clnt: RpcClient, vote_store: VoteCollector) -> Self {
+impl<T: eclipse::ProofGenerator> BlockProcessor<T> {
+    pub fn new(clnt: RpcClient, vote_store: VoteCollector<T>) -> Self {
         BlockProcessor {
             client: clnt,
             slot_votes: vote_store,
@@ -173,8 +163,14 @@ impl BlockProcessor {
                 (&tx.signatures).into_iter().for_each(|sig| {
                     if sig.verify(sk.as_ref(), &msg) {
                         println!("successfully verified signature; adding to slot signatures");
-                        self.slot_votes
-                            .push_vote(slot, Vote::new(*sig, sk.to_bytes().to_vec(), msg.clone()));
+                        self.slot_votes.push_vote(
+                            slot,
+                            eclipse::Vote::new(
+                                sig.as_ref().to_vec(),
+                                sk.to_bytes().to_vec(),
+                                msg.clone(),
+                            ),
+                        );
                     }
                 });
             });
@@ -182,47 +178,48 @@ impl BlockProcessor {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use {
-        crate::solana::{Vote, VoteCollector},
+        crate::eclipse,
+        crate::solana::VoteCollector,
         solana_sdk::{clock::Slot, signature::Signature},
-        std::{str::FromStr, sync::mpsc::channel},
+        std::str::FromStr,
     };
+
+    struct TestProofGenerator {
+        proof: Option<(u64, Vec<eclipse::Vote>)>,
+    }
+    impl eclipse::ProofGenerator for TestProofGenerator {
+        fn generate_proof(&self, slot: u64, votes: Vec<eclipse::Vote>) -> Result<(), String> {
+            self.proof = Some((slot, votes));
+            Ok(())
+        }
+    }
 
     #[test]
     fn vote_collector_sends_votes_at_threshold() {
-        let (tx, rx) = channel();
-        let mut vote_collector = VoteCollector::new(3, tx);
+        let proof_generator = TestProofGenerator { proof: None };
+        let mut vote_collector = VoteCollector::new(3, proof_generator);
 
-        let sig = Signature::from_str("5wVomaSMCDciSneCfZYmdoeEAoduEwWbj4wtE7q7qAuuCvFZD7DFzzjnL9UCXsuW9ZjsgYNoM2djSS8KCEgp5ATs").unwrap();
+        let sig = Signature::from_str("5wVomaSMCDciSneCfZYmdoeEAoduEwWbj4wtE7q7qAuuCvFZD7DFzzjnL9UCXsuW9ZjsgYNoM2djSS8KCEgp5ATs").unwrap().as_ref().to_vec();
         let pub_key = bs58::decode("").into_vec().unwrap();
         let msg = bs58::decode("").into_vec().unwrap();
         let slot: Slot = 42;
-        let v = Vote::new(sig, pub_key, msg);
+        let v = eclipse::Vote::new(sig, pub_key, msg);
 
         // First
         vote_collector.push_vote(slot, v.clone());
-        assert!(rx.try_recv().is_err());
+        assert_eq!(proof_generator.proof, None);
 
         // Second
         vote_collector.push_vote(slot, v.clone());
-        assert!(rx.try_recv().is_err());
+        assert_eq!(proof_generator.proof, None);
 
         // Third
         vote_collector.push_vote(slot, v.clone());
-
-        let received_vote = rx.try_recv();
-        assert!(received_vote.is_ok());
-
-        let (slot, votes) = received_vote.unwrap();
-        assert_eq!(votes.len(), 3);
-
-        // No more items in channel left
-        assert!(rx.try_recv().is_err());
-
-        // Fourth must not do anything as the used slot was already sent for proof generation.
-        vote_collector.push_vote(slot, v.clone());
-        assert!(rx.try_recv().is_err());
+        assert_ne!(proof_generator.proof, None);
     }
 }
+*/

@@ -3,16 +3,12 @@
 use {
     clap::{crate_description, crate_name, crate_version, App, Arg},
     solana_client::rpc_client::RpcClient,
-    solana_sdk::clock::Slot,
-    std::{
-        str::FromStr,
-        sync::mpsc::{channel, Receiver, Sender},
-        thread,
-        time::Duration,
-    },
+    std::{str::FromStr, time::Duration},
     url::Url,
 };
 
+mod aleo;
+mod eclipse;
 mod solana;
 
 fn main() {
@@ -66,19 +62,7 @@ fn main() {
         None => 0,
     };
 
-    let (proof_generator, vote_collections): (Sender<(Slot, Vec<solana::Vote>)>, Receiver<(_, _)>) =
-        channel();
-
-    thread::spawn(move || {
-        while let Ok((slot, slot_votes)) = vote_collections.recv() {
-            println!(
-                "slot {} ready for proof generation. {} votes collected.",
-                slot,
-                slot_votes.len()
-            );
-        }
-    });
-
+    let proof_generator = aleo::DummyProofGenerator {};
     let vote_collector = solana::VoteCollector::new(confirmation_threshold, proof_generator);
     let mut block_processor = solana::BlockProcessor::new(client, vote_collector);
 
