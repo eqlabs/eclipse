@@ -12,7 +12,7 @@ By storing periodic zero-knowledge proofs of the Solana votes on the Aleo blockc
 Eclipse is written in Rust, and therefore uses the [Rust toolchain](https://www.rust-lang.org/tools/install).
 
 ```bash
-$ git clone https://github.com/tuommaki/eclipse && cd eclipse
+$ git clone https://github.com/eqlabs/eclipse && cd eclipse
 $ cargo build
 $ cargo run
 ```
