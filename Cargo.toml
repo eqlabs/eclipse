@@ -4,6 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bin]]
+name = "solana-to-aleo"
+path = "src/solana-to-aleo/main.rs"
+
+[[bin]]
+name = "aleo-to-solana"
+path = "src/aleo-to-solana/main.rs"
 
 [dependencies]
 bs58 = "0.4.0"
@@ -16,3 +23,15 @@ solana-sdk = "1.8.3"
 solana-transaction-status = "1.8.3"
 ticker = "0.1.1"
 url = "2.2.2"
+anyhow = "1"
+tokio = { version = "1.8", features = ["full"] }
+tracing = "0.1"
+jsonrpsee = { version = "0.6.1", features = ["macros", "http-client"] }
+
+[dev-dependencies]
+jsonrpsee-types = "0.6.1"
+serde = "1.0.131"
+json-rpc-types= "1.0"
+jsonrpc-core = "18"
+
+
