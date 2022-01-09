@@ -5,8 +5,8 @@ use {
     jsonrpsee::{
         http_client::{HttpClient, HttpClientBuilder},
         rpc_params,
-        types::traits::Client,
     },
+    jsonrpsee_core::client::ClientT,
     serde::{Deserialize, Serialize},
     snarkvm::{
         dpc::testnet2::Testnet2,
