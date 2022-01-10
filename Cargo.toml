@@ -35,9 +35,4 @@ tokio = { version = "1.8", features = ["full"] }
 tracing = "0.1"
 jsonrpsee = { version = "0.7.0", features = ["macros", "http-client"]}
 jsonrpsee-core = { version = "0.7.0"}
-beef = { version = "0.5.1", features = ["impl_serde"] }
 
-[dev-dependencies]
-jsonrpsee-types = "0.6.1"
-json-rpc-types= "1.0"
-jsonrpc-core = "18"
