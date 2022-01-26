@@ -20,14 +20,18 @@ ed25519-dalek = "=1.0.1"
 serde = "1.0.131"
 serde_json = "1.0.56"
 snarkos-storage = { git = "https://github.com/AleoHQ/snarkOS.git", branch = "testnet2" }
+snarkvm = { git = "https://github.com/AleoHQ/snarkVM.git", rev = "ff10c20" }
 snarkvm-algorithms = { git = "https://github.com/AleoHQ/snarkVM.git", rev = "ff10c20" }
 snarkvm-curves = { git = "https://github.com/AleoHQ/snarkVM.git", rev = "ff10c20" }
 snarkvm-fields = { git = "https://github.com/AleoHQ/snarkVM.git", rev = "ff10c20" }
-snarkvm = { git = "https://github.com/AleoHQ/snarkVM.git", rev = "ff10c20" }
-solana-client = "1.8.3"
-solana-vote-program = "1.8.3"
-solana-sdk = "1.8.3"
-solana-transaction-status = "1.8.3"
+snarkvm-utilities = { git = "https://github.com/AleoHQ/snarkVM.git", rev = "ff10c20" }
+solana-clap-utils = "1.9.4"
+solana-cli-config = "1.9.4"
+solana-client = "1.9.4"
+solana-logger = "1.9.4"
+solana-sdk = "1.9.4"
+solana-program = "1.9.4"
+solana-transaction-status = "1.9.4"
 ticker = "0.1.1"
 url = "2.2.2"
 anyhow = "1.0.52"
