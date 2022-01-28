@@ -32,7 +32,7 @@ use {
     solana_sdk::{
         signature::Signer, signer::keypair::Keypair, transaction::Transaction as SolanaTransaction,
     },
-    std::{process::exit, str::FromStr, sync::Arc, thread::sleep, time::Duration},
+    std::{fs, process::exit, str::FromStr, sync::Arc, thread::sleep, time::Duration},
 };
 
 mod aleo_proof;
@@ -231,6 +231,11 @@ impl Eclipse {
 
                     match response {
                         Ok(tx) => {
+                            let input_bytes = tx.transaction.transaction_id().to_bytes_le()?;
+                            println!("length of input_bytes: {}", input_bytes.len());
+                            self.command_verify_proof(input_bytes.as_ref()).await?;
+
+                            /*
                             for t in tx.transaction.transitions() {
                                 // Initialize a local transitions tree.
                                 let tree = PhantomTree::<Testnet2>::new()
@@ -246,8 +251,15 @@ impl Eclipse {
 
                                 println!("length of input_bytes: {}", input_bytes.len());
 
-                                self.command_verify_proof(input_bytes.as_ref()).await?;
+                                fs::write(
+                                    format!("transition-{}.dat", t.transition_id()),
+                                    input_bytes,
+                                )
+                                .expect("Unable to write file");
+
+                                //self.command_verify_proof(input_bytes.as_ref()).await?;
                             }
+                            */
                         }
                         Err(err) => {
                             println!("error: failed to deserialize transaction: {}", err);
