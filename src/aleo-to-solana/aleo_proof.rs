@@ -1,12 +1,9 @@
 use {
-    snarkvm::{dpc::testnet2::Testnet2, dpc::traits::Network, dpc::transition::Transition},
-    snarkvm_algorithms::merkle_tree::*,
+    snarkvm::{dpc::traits::Network, dpc::transition::Transition},
     snarkvm_utilities::{
         io::{Read, Result as IoResult, Write},
         FromBytes, ToBytes,
     },
-    solana_sdk::{decode_error::DecodeError, instruction::InstructionError},
-    std::sync::Arc,
 };
 
 pub(crate) struct Input<N: Network> {

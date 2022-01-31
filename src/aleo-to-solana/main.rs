@@ -3,25 +3,18 @@ use {
     clap::{
         crate_description, crate_name, crate_version, value_t, App, AppSettings, Arg, SubCommand,
     },
-    derivative::Derivative,
     jsonrpsee::{
         http_client::{HttpClient, HttpClientBuilder},
         rpc_params,
     },
     jsonrpsee_core::client::ClientT,
     serde::{Deserialize, Serialize},
-    snarkvm::{
-        dpc::testnet2::Testnet2,
-        dpc::traits::Network,
-        prelude::{Block, Transaction as SnarkVMTransaction},
-    },
-    snarkvm_algorithms::merkle_tree::*,
-    snarkvm_utilities::ToBytes,
+    snarkvm::dpc::testnet2::Testnet2,
+    snarkvm::prelude::{Block, Transaction as SnarkVMTransaction},
+    snarkvm::utilities::ToBytes,
     solana_clap_utils::{
-        fee_payer::fee_payer_arg,
         input_parsers::keypair_of,
         input_validators::{is_keypair, is_url},
-        keypair::signer_from_path,
     },
     solana_client::rpc_client::RpcClient,
     solana_program::{
@@ -32,44 +25,15 @@ use {
     solana_sdk::{
         signature::Signer, signer::keypair::Keypair, transaction::Transaction as SolanaTransaction,
     },
-    std::{fs, process::exit, str::FromStr, sync::Arc, thread::sleep, time::Duration},
+    std::{process::exit, str::FromStr, thread::sleep, time::Duration},
 };
 
 mod aleo_proof;
-
-type Error = Box<dyn std::error::Error>;
-type CommandResult = Result<(), Error>;
 
 struct Eclipse {
     solana_client: RpcClient,
     solana_keypair: Keypair,
     snarkos_client: HttpClient,
-    fee_payer: Box<dyn Signer>,
-}
-
-#[derive(Derivative)]
-#[derivative(Clone(bound = "N: Network"), Debug(bound = "N: Network"))]
-pub struct PhantomTree<N: Network> {
-    #[derivative(Debug = "ignore")]
-    tree: Arc<MerkleTree<N::TransactionIDParameters>>,
-}
-
-impl<N: Network> PhantomTree<N> {
-    /// Initializes an empty local transitions tree.
-    pub fn new() -> Result<Self> {
-        Ok(Self {
-            tree: Arc::new(MerkleTree::<N::TransactionIDParameters>::new::<
-                N::TransitionID,
-            >(
-                Arc::new(N::transaction_id_parameters().clone()), &vec![]
-            )?),
-        })
-    }
-
-    /// Returns the local transitions root.
-    pub fn root(&self) -> N::TransactionID {
-        (*self.tree.root()).into()
-    }
 }
 
 #[tokio::main]
@@ -121,12 +85,10 @@ async fn main() -> anyhow::Result<()> {
                 .default_value("http://127.0.0.1:3032")
                 .help("JSON RPC URL for the Aleo cluster.  Default from the configuration file."),
         )
-        .arg(fee_payer_arg().short("p").global(true))
         .subcommand(
             SubCommand::with_name("verify_proofs").about("Call native Aleo Proof Verifier program"),
         )
         .get_matches();
-    let mut wallet_manager = None;
     let eclipse = {
         let cli_config = if let Some(config_file) = matches.value_of("config_file") {
             solana_cli_config::Config::load(config_file).unwrap_or_default()
@@ -135,19 +97,6 @@ async fn main() -> anyhow::Result<()> {
         };
         let solana_json_rpc_url = value_t!(matches, "solana_json_rpc_url", String)
             .unwrap_or_else(|_| cli_config.json_rpc_url.clone());
-
-        let fee_payer = signer_from_path(
-            &matches,
-            matches
-                .value_of("fee_payer")
-                .unwrap_or(&cli_config.keypair_path),
-            "fee_payer",
-            &mut wallet_manager,
-        )
-        .unwrap_or_else(|e| {
-            eprintln!("error: {}", e);
-            exit(1);
-        });
 
         let solana_keypair =
             keypair_of(&matches, "solana_keypair").expect("invalid solana keypair");
@@ -158,7 +107,6 @@ async fn main() -> anyhow::Result<()> {
             solana_client: RpcClient::new(solana_json_rpc_url),
             solana_keypair,
             snarkos_client,
-            fee_payer,
         }
     };
 
@@ -234,32 +182,6 @@ impl Eclipse {
                             let input_bytes = tx.transaction.transaction_id().to_bytes_le()?;
                             println!("length of input_bytes: {}", input_bytes.len());
                             self.command_verify_proof(input_bytes.as_ref()).await?;
-
-                            /*
-                            for t in tx.transaction.transitions() {
-                                // Initialize a local transitions tree.
-                                let tree = PhantomTree::<Testnet2>::new()
-                                    .expect("simple constructor must always succeed");
-
-                                let input_bytes = aleo_proof::Input::<Testnet2> {
-                                    transition: t.clone(),
-                                    inner_circuit_id: tx.transaction.inner_circuit_id(),
-                                    ledger_root: tx.transaction.ledger_root(),
-                                    local_transitions_root: tree.root(),
-                                }
-                                .to_bytes_le()?;
-
-                                println!("length of input_bytes: {}", input_bytes.len());
-
-                                fs::write(
-                                    format!("transition-{}.dat", t.transition_id()),
-                                    input_bytes,
-                                )
-                                .expect("Unable to write file");
-
-                                //self.command_verify_proof(input_bytes.as_ref()).await?;
-                            }
-                            */
                         }
                         Err(err) => {
                             println!("error: failed to deserialize transaction: {}", err);
