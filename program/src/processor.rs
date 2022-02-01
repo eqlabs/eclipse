@@ -4,8 +4,9 @@ use {
     solana_program::{
         account_info::{next_account_info, AccountInfo},
         entrypoint::ProgramResult,
+        instruction::Instruction,
         msg,
-        program::invoke_signed,
+        program::{invoke, invoke_signed},
         pubkey::Pubkey,
         system_instruction,
         sysvar::{rent::Rent, Sysvar},
@@ -22,22 +23,27 @@ impl Processor {
     ) -> ProgramResult {
         let instruction = EclipseInstruction::try_from_slice(instruction_data)?;
         match instruction {
-            EclipseInstruction::VerifyAleoTransaction { tx_id } => {
-                Self::process_aleo_tx_verification(accounts, program_id, tx_id)
-            }
+            EclipseInstruction::VerifyAleoTransaction {
+                tx_id,
+                aleo_verifier_id,
+            } => Self::process_aleo_tx_verification(accounts, program_id, tx_id, &aleo_verifier_id),
         }
     }
     pub fn process_aleo_tx_verification(
         accounts: &[AccountInfo],
         program_id: &Pubkey,
         tx_id: Vec<u8>,
+        aleo_verifier_id: &Pubkey,
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
         let authority_account = next_account_info(account_info_iter)?;
         let state_account = next_account_info(account_info_iter)?;
+        let aleo_program_account = next_account_info(account_info_iter)?;
         let system_program_account = next_account_info(account_info_iter)?;
 
         // Call AleoVerifier native program
+        let instruction = Instruction::new_with_bytes(*aleo_verifier_id, tx_id.as_ref(), vec![]);
+        invoke(&instruction, &[aleo_program_account.clone()])?;
 
         let (verified_pda, verified_acc_bump) = Pubkey::find_program_address(
             &[
