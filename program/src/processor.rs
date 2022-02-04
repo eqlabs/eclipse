@@ -4,7 +4,7 @@ use {
     solana_program::{
         account_info::{next_account_info, AccountInfo},
         entrypoint::ProgramResult,
-        instruction::Instruction,
+        instruction::{AccountMeta, Instruction},
         msg,
         program::{invoke, invoke_signed},
         pubkey::Pubkey,
@@ -36,14 +36,43 @@ impl Processor {
         aleo_verifier_id: &Pubkey,
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
+
         let authority_account = next_account_info(account_info_iter)?;
         let state_account = next_account_info(account_info_iter)?;
-        let aleo_program_account = next_account_info(account_info_iter)?;
+        let pda_account = next_account_info(account_info_iter)?;
+        let aleo_account = next_account_info(account_info_iter)?;
+        let _eclipse_program = next_account_info(account_info_iter)?;
+        let aleo_program = next_account_info(account_info_iter)?;
         let system_program_account = next_account_info(account_info_iter)?;
 
         // Call AleoVerifier native program
-        let instruction = Instruction::new_with_bytes(*aleo_verifier_id, tx_id.as_ref(), vec![]);
-        invoke(&instruction, &[aleo_program_account.clone()])?;
+        let instruction = Instruction::new_with_bytes(
+            *aleo_verifier_id,
+            tx_id.as_ref(),
+            vec![
+                AccountMeta::new(*pda_account.key, true),
+                AccountMeta::new(*aleo_account.key, false),
+                AccountMeta::new(*authority_account.key, false),
+            ],
+        );
+
+        msg!("instruction update with auth: {:?}", instruction);
+
+        let (_, bump_seed) = Pubkey::find_program_address(&[b"eclipse"], program_id);
+        let r = invoke_signed(
+            &instruction,
+            &[
+                authority_account.clone(),
+                aleo_account.clone(),
+                aleo_program.clone(),
+                pda_account.clone(),
+            ],
+            &[&[&b"eclipse"[..], &[bump_seed]]],
+        );
+
+        msg!("result native invoke: {:?}", r);
+
+        r?;
 
         let (verified_pda, verified_acc_bump) = Pubkey::find_program_address(
             &[
@@ -58,8 +87,9 @@ impl Processor {
         }
 
         // Only successfully verified tx are stored
-        // length is bump for the account + authority_account
-        // TODO: tx_id byte length
+        // length is bump for the account + authority_account + tx_id
+        // TODO: tx_id exact byte length 1511
+        // This is for rent calculation only
         let stored_tx_len: usize = 1 + 32 + 32;
 
         let rent = Rent::get()?;
@@ -77,11 +107,7 @@ impl Processor {
 
         invoke_signed(
             create_tx_pda_ix,
-            &[
-                authority_account.clone(),
-                state_account.clone(),
-                system_program_account.clone(),
-            ],
+            &[state_account.clone(), system_program_account.clone()],
             &[&[
                 b"AleoTx".as_ref(),
                 tx_id.as_ref(),

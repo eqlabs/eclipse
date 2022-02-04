@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-solana-program = "=1.9.4"
+solana-program = "1.9.5"
 thiserror = "1.0.24"
 arrayref = "0.3.6"
 solana-frozen-abi = "1.9.4"

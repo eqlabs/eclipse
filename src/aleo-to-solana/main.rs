@@ -1,5 +1,6 @@
 use {
     anyhow::Result,
+    borsh::BorshSerialize,
     clap::{
         crate_description, crate_name, crate_version, value_t, App, AppSettings, Arg, SubCommand,
     },
@@ -127,7 +128,12 @@ async fn main() -> anyhow::Result<()> {
                     .into_vec()
                     .unwrap(),
             );
-            eclipse.verify_proofs(&eclipse_program_id)
+            let data = &[
+                177, 14, 251, 46, 202, 94, 8, 69, 161, 17, 107, 17, 25, 1, 124, 213, 109, 141, 76,
+                77, 27, 145, 234, 77, 143, 198, 185, 227, 160, 118, 189, 0,
+            ];
+            eclipse.command_verify_proof(data, &eclipse_program_id)
+            // eclipse.verify_proofs(&eclipse_program_id)
         }
         _ => unreachable!(),
     }
@@ -162,7 +168,7 @@ impl Eclipse {
                         cur_block.hash()
                     );
                     // Sleep
-                    sleep(Duration::from_millis(5000));
+                    // sleep(Duration::from_millis(5000));
                     continue;
                 }
             }
@@ -227,32 +233,44 @@ impl Eclipse {
         let native_program_id = Pubkey::from_str("A1eoProof1111111111111111111111111111111111")
             .expect("failed to set program_id");
 
-        // MAX_SEEDS: usize = 16
-        // MAX_SEED_LEN: usize = 32
-
-        println!("data        {:?}", data);
-        println!("keypair     {}", self.solana_keypair.pubkey());
-        println!("ec p id     {}", eclipse_program_id);
-        let state_account_pubkey = Pubkey::create_program_address(
+        let (state_account_pubkey, _) = Pubkey::find_program_address(
             &[
                 b"AleoTx".as_ref(),
                 data,
                 self.solana_keypair.pubkey().as_ref(),
             ],
             eclipse_program_id,
-        )?;
-        println!("Got Program {:?}", state_account_pubkey);
+        );
 
-        let instruction = Instruction::new_with_bytes(
-            *eclipse_program_id,
-            data,
-            vec![
+        println!("State Program {:?}", state_account_pubkey);
+
+        let (pda_account_pubkey, bump_seed) =
+            Pubkey::find_program_address(&[b"eclipse"], eclipse_program_id);
+        println!("State bump_seed {:?}", bump_seed);
+
+        let native_acc_pubkey = Pubkey::create_with_seed(
+            &self.solana_keypair.pubkey(),
+            "aleo verifier",
+            &pda_account_pubkey,
+        )?;
+
+        let instruction = Instruction {
+            program_id: *eclipse_program_id,
+            accounts: vec![
                 AccountMeta::new(self.solana_keypair.pubkey(), true),
                 AccountMeta::new(state_account_pubkey, false),
+                AccountMeta::new(pda_account_pubkey, false),
+                AccountMeta::new(native_acc_pubkey, false),
+                AccountMeta::new_readonly(*eclipse_program_id, false),
                 AccountMeta::new_readonly(native_program_id, false),
                 AccountMeta::new_readonly(system_program::id(), false),
             ],
-        );
+            data: eclipse_onchain_program::instruction::EclipseInstruction::VerifyAleoTransaction {
+                tx_id: data.to_vec(),
+                aleo_verifier_id: native_program_id,
+            }
+            .try_to_vec()?,
+        };
 
         println!("Instruction for Eclipse Onchain: {:?}", instruction);
 
