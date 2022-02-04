@@ -128,12 +128,12 @@ async fn main() -> anyhow::Result<()> {
                     .into_vec()
                     .unwrap(),
             );
-            let data = &[
-                177, 14, 251, 46, 202, 94, 8, 69, 161, 17, 107, 17, 25, 1, 124, 213, 109, 141, 76,
-                77, 27, 145, 234, 77, 143, 198, 185, 227, 160, 118, 189, 0,
-            ];
-            eclipse.command_verify_proof(data, &eclipse_program_id)
-            // eclipse.verify_proofs(&eclipse_program_id)
+            //let data = &[
+            //    177, 14, 251, 46, 202, 94, 8, 69, 161, 17, 107, 17, 25, 1, 124, 213, 109, 141, 76,
+            //    77, 27, 145, 234, 77, 143, 198, 185, 227, 160, 118, 189, 0,
+            //];
+            // eclipse.command_verify_proof(data, &eclipse_program_id)
+            eclipse.verify_proofs(&eclipse_program_id)
         }
         _ => unreachable!(),
     }
@@ -168,7 +168,7 @@ impl Eclipse {
                         cur_block.hash()
                     );
                     // Sleep
-                    // sleep(Duration::from_millis(5000));
+                    sleep(Duration::from_millis(5000));
                     continue;
                 }
             }
@@ -230,9 +230,10 @@ impl Eclipse {
         data: &[u8],
         eclipse_program_id: &Pubkey,
     ) -> anyhow::Result<()> {
-        let native_program_id = Pubkey::from_str("A1eoProof1111111111111111111111111111111111")
+        let aleo_program_id = Pubkey::from_str("A1eoProof1111111111111111111111111111111111")
             .expect("failed to set program_id");
 
+        // Account to store sucesssful verification
         let (state_account_pubkey, _) = Pubkey::find_program_address(
             &[
                 b"AleoTx".as_ref(),
@@ -242,17 +243,9 @@ impl Eclipse {
             eclipse_program_id,
         );
 
-        println!("State Program {:?}", state_account_pubkey);
-
-        let (pda_account_pubkey, bump_seed) =
+        // Account for signing for CPI
+        let (pda_account_pubkey, _) =
             Pubkey::find_program_address(&[b"eclipse"], eclipse_program_id);
-        println!("State bump_seed {:?}", bump_seed);
-
-        let native_acc_pubkey = Pubkey::create_with_seed(
-            &self.solana_keypair.pubkey(),
-            "aleo verifier",
-            &pda_account_pubkey,
-        )?;
 
         let instruction = Instruction {
             program_id: *eclipse_program_id,
@@ -260,19 +253,15 @@ impl Eclipse {
                 AccountMeta::new(self.solana_keypair.pubkey(), true),
                 AccountMeta::new(state_account_pubkey, false),
                 AccountMeta::new(pda_account_pubkey, false),
-                AccountMeta::new(native_acc_pubkey, false),
-                AccountMeta::new_readonly(*eclipse_program_id, false),
-                AccountMeta::new_readonly(native_program_id, false),
+                AccountMeta::new_readonly(aleo_program_id, false),
                 AccountMeta::new_readonly(system_program::id(), false),
             ],
             data: eclipse_onchain_program::instruction::EclipseInstruction::VerifyAleoTransaction {
                 tx_id: data.to_vec(),
-                aleo_verifier_id: native_program_id,
+                aleo_program_id,
             }
             .try_to_vec()?,
         };
-
-        println!("Instruction for Eclipse Onchain: {:?}", instruction);
 
         let latest_blockhash = self
             .solana_client
@@ -284,6 +273,7 @@ impl Eclipse {
             SolanaTransaction::new(&[&self.solana_keypair], message, latest_blockhash);
 
         self.send_transaction(transaction).await?;
+        println!("Verification stored at Account: {:?}", state_account_pubkey);
         Ok(())
     }
 

@@ -7,11 +7,11 @@ pub enum EclipseInstruction {
     ///
     /// 0. `[signer]`: The account of the account initialise the verification
     /// 1. `[writable]`: Aleo transactions verification results storage account
-    /// 2. `[]`: Eclipse Program account
+    /// 2. `[]`: Eclipse Program PDA account
     /// 3. `[]`: Aleo Program account
     /// 4. `[]`: System Program account
     VerifyAleoTransaction {
         tx_id: Vec<u8>,
-        aleo_verifier_id: Pubkey,
+        aleo_program_id: Pubkey,
     },
 }

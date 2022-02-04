@@ -4,9 +4,9 @@ use {
     solana_program::{
         account_info::{next_account_info, AccountInfo},
         entrypoint::ProgramResult,
-        instruction::{AccountMeta, Instruction},
+        instruction::Instruction,
         msg,
-        program::{invoke, invoke_signed},
+        program::invoke_signed,
         pubkey::Pubkey,
         system_instruction,
         sysvar::{rent::Rent, Sysvar},
@@ -25,8 +25,8 @@ impl Processor {
         match instruction {
             EclipseInstruction::VerifyAleoTransaction {
                 tx_id,
-                aleo_verifier_id,
-            } => Self::process_aleo_tx_verification(accounts, program_id, tx_id, &aleo_verifier_id),
+                aleo_program_id,
+            } => Self::process_aleo_tx_verification(accounts, program_id, tx_id, &aleo_program_id),
         }
     }
     pub fn process_aleo_tx_verification(
@@ -40,39 +40,18 @@ impl Processor {
         let authority_account = next_account_info(account_info_iter)?;
         let state_account = next_account_info(account_info_iter)?;
         let pda_account = next_account_info(account_info_iter)?;
-        let aleo_account = next_account_info(account_info_iter)?;
-        let _eclipse_program = next_account_info(account_info_iter)?;
         let aleo_program = next_account_info(account_info_iter)?;
         let system_program_account = next_account_info(account_info_iter)?;
 
         // Call AleoVerifier native program
-        let instruction = Instruction::new_with_bytes(
-            *aleo_verifier_id,
-            tx_id.as_ref(),
-            vec![
-                AccountMeta::new(*pda_account.key, true),
-                AccountMeta::new(*aleo_account.key, false),
-                AccountMeta::new(*authority_account.key, false),
-            ],
-        );
-
-        msg!("instruction update with auth: {:?}", instruction);
+        let instruction = Instruction::new_with_bytes(*aleo_verifier_id, tx_id.as_ref(), vec![]);
 
         let (_, bump_seed) = Pubkey::find_program_address(&[b"eclipse"], program_id);
-        let r = invoke_signed(
+        invoke_signed(
             &instruction,
-            &[
-                authority_account.clone(),
-                aleo_account.clone(),
-                aleo_program.clone(),
-                pda_account.clone(),
-            ],
+            &[aleo_program.clone(), pda_account.clone()],
             &[&[&b"eclipse"[..], &[bump_seed]]],
-        );
-
-        msg!("result native invoke: {:?}", r);
-
-        r?;
+        )?;
 
         let (verified_pda, verified_acc_bump) = Pubkey::find_program_address(
             &[
@@ -88,8 +67,6 @@ impl Processor {
 
         // Only successfully verified tx are stored
         // length is bump for the account + authority_account + tx_id
-        // TODO: tx_id exact byte length 1511
-        // This is for rent calculation only
         let stored_tx_len: usize = 1 + 32 + 32;
 
         let rent = Rent::get()?;
@@ -103,11 +80,13 @@ impl Processor {
             program_id,
         );
 
-        msg!("Storing new verified Aleo tx");
-
         invoke_signed(
             create_tx_pda_ix,
-            &[state_account.clone(), system_program_account.clone()],
+            &[
+                authority_account.clone(),
+                state_account.clone(),
+                system_program_account.clone(),
+            ],
             &[&[
                 b"AleoTx".as_ref(),
                 tx_id.as_ref(),
@@ -116,13 +95,15 @@ impl Processor {
             ]],
         )?;
 
-        let mut state = <AleoVerified>::try_from_slice(&state_account.data.borrow())?;
-        state.bump = verified_acc_bump;
+        let mut state = AleoVerified::deserialize(&mut &state_account.data.borrow()[..])?;
+        state.tx_id = tx_id
+            .try_into()
+            .map_err(|_| EclipseError::InvalidStateAccount)
+            .unwrap();
+        state.bump = bump_seed;
         state.authority = *authority_account.key;
-        state.tx_id = tx_id.to_vec();
-
         state.serialize(&mut &mut state_account.data.borrow_mut()[..])?;
-
+        msg!("New Verified Aleo Tx Stored at {:?}", state_account.key);
         Ok(())
     }
 }
