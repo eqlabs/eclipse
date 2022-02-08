@@ -7,13 +7,13 @@ edition = "2021"
 solana-program = "1.9.5"
 thiserror = "1.0.24"
 arrayref = "0.3.6"
-solana-frozen-abi = "1.9.4"
+solana-frozen-abi = "1.9.5"
 zeroize = "1.4.3"
 borsh = "0.9.1"
 bytemuck = { version = "1.7.2", features = ["derive"] }
 
 [dev-dependencies]
-solana-sdk = "1.9.2"
+solana-sdk = "1.9.5"
 
 [features]
 test-bpf = []
