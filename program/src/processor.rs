@@ -1,5 +1,9 @@
 use {
-    crate::{error::EclipseError, instruction::EclipseInstruction, state::AleoVerified},
+    crate::{
+        error::EclipseError,
+        instruction::{EclipseInstruction, ALEO_VERIFIER},
+        state::AleoVerified,
+    },
     borsh::{BorshDeserialize, BorshSerialize},
     solana_program::{
         account_info::{next_account_info, AccountInfo},
@@ -11,6 +15,7 @@ use {
         system_instruction,
         sysvar::{rent::Rent, Sysvar},
     },
+    std::str::FromStr,
 };
 
 pub struct Processor;
@@ -23,17 +28,15 @@ impl Processor {
     ) -> ProgramResult {
         let instruction = EclipseInstruction::try_from_slice(instruction_data)?;
         match instruction {
-            EclipseInstruction::VerifyAleoTransaction {
-                tx_id,
-                aleo_program_id,
-            } => Self::process_aleo_tx_verification(accounts, program_id, tx_id, &aleo_program_id),
+            EclipseInstruction::VerifyAleoTransaction { tx_id } => {
+                Self::process_aleo_tx_verification(accounts, program_id, tx_id)
+            }
         }
     }
     pub fn process_aleo_tx_verification(
         accounts: &[AccountInfo],
         program_id: &Pubkey,
         tx_id: Vec<u8>,
-        aleo_verifier_id: &Pubkey,
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
 
@@ -44,7 +47,9 @@ impl Processor {
         let system_program_account = next_account_info(account_info_iter)?;
 
         // Call AleoVerifier native program
-        let instruction = Instruction::new_with_bytes(*aleo_verifier_id, tx_id.as_ref(), vec![]);
+        let aleo_verifier_id = Pubkey::from_str(ALEO_VERIFIER).expect("failed to set program_id");
+
+        let instruction = Instruction::new_with_bytes(aleo_verifier_id, tx_id.as_ref(), vec![]);
 
         let (_, bump_seed) = Pubkey::find_program_address(&[b"eclipse"], program_id);
         invoke_signed(

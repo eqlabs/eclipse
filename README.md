@@ -17,7 +17,7 @@ In our Solana forked reposity root, run
 Then you can run the `Solana-test-validator` by
 
 ```sh
-./bin/solana-test-validator -r --logs
+./bin/solana-test-validator -r --log
 ```
 
 Details found [here](https://docs.solana.com/developing/test-validator) on the `solana-test-validator`.
@@ -59,4 +59,3 @@ In the _Solana_ repository:
 ```sh
 ./bin/solana account <account-where-verification-results-stored>
 ```
-

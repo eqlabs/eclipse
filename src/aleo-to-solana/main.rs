@@ -128,11 +128,6 @@ async fn main() -> anyhow::Result<()> {
                     .into_vec()
                     .unwrap(),
             );
-            //let data = &[
-            //    177, 14, 251, 46, 202, 94, 8, 69, 161, 17, 107, 17, 25, 1, 124, 213, 109, 141, 76,
-            //    77, 27, 145, 234, 77, 143, 198, 185, 227, 160, 118, 189, 0,
-            //];
-            // eclipse.command_verify_proof(data, &eclipse_program_id)
             eclipse.verify_proofs(&eclipse_program_id)
         }
         _ => unreachable!(),
@@ -258,7 +253,6 @@ impl Eclipse {
             ],
             data: eclipse_onchain_program::instruction::EclipseInstruction::VerifyAleoTransaction {
                 tx_id: data.to_vec(),
-                aleo_program_id,
             }
             .try_to_vec()?,
         };

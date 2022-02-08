@@ -1,5 +1,4 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use solana_program::pubkey::Pubkey;
 
 #[derive(BorshSerialize, BorshDeserialize, PartialEq, Debug)]
 pub enum EclipseInstruction {
@@ -10,8 +9,7 @@ pub enum EclipseInstruction {
     /// 2. `[]`: Eclipse Program PDA account
     /// 3. `[]`: Aleo Program account
     /// 4. `[]`: System Program account
-    VerifyAleoTransaction {
-        tx_id: Vec<u8>,
-        aleo_program_id: Pubkey,
-    },
+    VerifyAleoTransaction { tx_id: Vec<u8> },
 }
+
+pub const ALEO_VERIFIER: &str = "A1eoProof1111111111111111111111111111111111";
