@@ -1,5 +1,6 @@
 use {
     anyhow::Result,
+    borsh::BorshSerialize,
     clap::{
         crate_description, crate_name, crate_version, value_t, App, AppSettings, Arg, SubCommand,
     },
@@ -13,7 +14,7 @@ use {
     snarkvm::prelude::{Block, Transaction as SnarkVMTransaction},
     snarkvm::utilities::ToBytes,
     solana_clap_utils::{
-        input_parsers::keypair_of,
+        input_parsers::{keypair_of, value_of},
         input_validators::{is_keypair, is_url},
     },
     solana_client::rpc_client::RpcClient,
@@ -21,6 +22,7 @@ use {
         instruction::{AccountMeta, Instruction},
         message::Message,
         pubkey::Pubkey,
+        system_program,
     },
     solana_sdk::{
         signature::Signer, signer::keypair::Keypair, transaction::Transaction as SolanaTransaction,
@@ -86,7 +88,15 @@ async fn main() -> anyhow::Result<()> {
                 .help("JSON RPC URL for the Aleo cluster.  Default from the configuration file."),
         )
         .subcommand(
-            SubCommand::with_name("verify_proofs").about("Call native Aleo Proof Verifier program"),
+            SubCommand::with_name("verify_proofs")
+                .about("Call Eclipse Onchain Program to verify Aleo Transaction Proof")
+                .arg(
+                    Arg::with_name("eclipse_program_id")
+                        .long("eclipse_program_id")
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .help("Eclipse onchain program id"),
+                ),
         )
         .get_matches();
     let eclipse = {
@@ -110,8 +120,16 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    let eclipse_program_id;
     let _ = match matches.subcommand() {
-        ("verify_proofs", _) => eclipse.verify_proofs(),
+        ("verify_proofs", Some(args)) => {
+            eclipse_program_id = Pubkey::new(
+                &bs58::decode(value_of::<String>(args, "eclipse_program_id").unwrap())
+                    .into_vec()
+                    .unwrap(),
+            );
+            eclipse.verify_proofs(&eclipse_program_id)
+        }
         _ => unreachable!(),
     }
     .await
@@ -124,7 +142,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 impl Eclipse {
-    async fn verify_proofs(&self) -> Result<()> {
+    async fn verify_proofs(&self, eclipse_program_id: &Pubkey) -> Result<()> {
         let mut cur_block: Block<Testnet2>;
         let mut prev_block: Option<Block<Testnet2>> = None;
 
@@ -151,13 +169,17 @@ impl Eclipse {
             }
 
             println!("processing block");
-            self.process_block(&cur_block).await?;
+            self.process_block(&cur_block, eclipse_program_id).await?;
 
             prev_block = Some(cur_block);
         }
     }
 
-    async fn process_block(&self, block: &Block<Testnet2>) -> anyhow::Result<()> {
+    async fn process_block(
+        &self,
+        block: &Block<Testnet2>,
+        eclipse_program_id: &Pubkey,
+    ) -> anyhow::Result<()> {
         for tx_id in block.transactions().transaction_ids() {
             let response: Result<serde_json::Value, _> = self
                 .snarkos_client
@@ -181,7 +203,8 @@ impl Eclipse {
                         Ok(tx) => {
                             let input_bytes = tx.transaction.transaction_id().to_bytes_le()?;
                             println!("length of input_bytes: {}", input_bytes.len());
-                            self.command_verify_proof(input_bytes.as_ref()).await?;
+                            self.command_verify_proof(input_bytes.as_ref(), eclipse_program_id)
+                                .await?;
                         }
                         Err(err) => {
                             println!("error: failed to deserialize transaction: {}", err);
@@ -197,20 +220,42 @@ impl Eclipse {
         Ok(())
     }
 
-    async fn command_verify_proof(&self, data: &[u8]) -> anyhow::Result<()> {
-        let program_id = Pubkey::from_str("A1eoProof1111111111111111111111111111111111")
+    async fn command_verify_proof(
+        &self,
+        data: &[u8],
+        eclipse_program_id: &Pubkey,
+    ) -> anyhow::Result<()> {
+        let aleo_program_id = Pubkey::from_str("A1eoProof1111111111111111111111111111111111")
             .expect("failed to set program_id");
 
-        let dest_pubkey =
-            Pubkey::create_with_seed(&self.solana_keypair.pubkey(), "my fuzzy seed", &program_id)?;
-        let instruction = Instruction::new_with_bytes(
-            program_id,
-            data,
-            vec![
-                AccountMeta::new(self.solana_keypair.pubkey(), true),
-                AccountMeta::new(dest_pubkey, false),
+        // Account to store sucesssful verification
+        let (state_account_pubkey, _) = Pubkey::find_program_address(
+            &[
+                b"AleoTx".as_ref(),
+                data,
+                self.solana_keypair.pubkey().as_ref(),
             ],
+            eclipse_program_id,
         );
+
+        // Account for signing for CPI
+        let (pda_account_pubkey, _) =
+            Pubkey::find_program_address(&[b"eclipse"], eclipse_program_id);
+
+        let instruction = Instruction {
+            program_id: *eclipse_program_id,
+            accounts: vec![
+                AccountMeta::new(self.solana_keypair.pubkey(), true),
+                AccountMeta::new(state_account_pubkey, false),
+                AccountMeta::new(pda_account_pubkey, false),
+                AccountMeta::new_readonly(aleo_program_id, false),
+                AccountMeta::new_readonly(system_program::id(), false),
+            ],
+            data: eclipse_onchain_program::instruction::EclipseInstruction::VerifyAleoTransaction {
+                tx_id: data.to_vec(),
+            }
+            .try_to_vec()?,
+        };
 
         let latest_blockhash = self
             .solana_client
@@ -222,6 +267,7 @@ impl Eclipse {
             SolanaTransaction::new(&[&self.solana_keypair], message, latest_blockhash);
 
         self.send_transaction(transaction).await?;
+        println!("Verification stored at Account: {:?}", state_account_pubkey);
         Ok(())
     }
 
@@ -230,10 +276,10 @@ impl Eclipse {
         transaction: SolanaTransaction,
     ) -> solana_client::client_error::Result<()> {
         println!("Sending transaction...");
-        let signature = self
+        let result = self
             .solana_client
-            .send_and_confirm_transaction_with_spinner(&transaction)?;
-        println!("Signature: {}", signature);
+            .send_and_confirm_transaction_with_spinner(&transaction);
+        println!("Solana onchain program result: {:?}", result);
         Ok(())
     }
 }
