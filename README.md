@@ -1,6 +1,15 @@
-# Eclipse
+# Project Eclipse _(eclipse)_
+> Bridging ecosystems by storing Zero-knowledge proofs of Solana votes on the Aleo blockchain.
 
-This repository works with the Eclipse version of the Solana node.
+[Aleo](https://www.aleo.org/) is a toolkit for private computation that utilizes zero-knowledge proofs stored on a blockchain.
+
+[Solana](https://solana.com/) is a blockchain based on a distributing voting system for validation.
+
+By storing periodic zero-knowledge proofs of the Solana votes on the Aleo blockchain, it is possible to create a two-way bridge between Solana, Aleo, and potentially any other system that is able to verify the proofs.
+
+## Install
+
+Eclipse is written in Rust, and therefore uses the [Rust toolchain](https://www.rust-lang.org/tools/install).
 
 ## To Run Aleo-to-Solana
 
@@ -45,7 +54,11 @@ Take a note of the program-id logged here for next step.
 Run eclipse service by
 
 ```sh
-./target/debug/aleo-to-solana --solana_keypair <default-path-to-solana-test-verifier-config-keypair> verify_proofs --eclipse_program_id <Eclipse-onchain-program-id>
+
+```bash
+$ git clone https://github.com/eqlabs/eclipse && cd eclipse/src/aleo-to-solana
+$ cargo build
+$ ./target/debug/aleo-to-solana --solana_keypair <default-path-to-solana-test-verifier-config-keypair> verify_proofs --eclipse_program_id <Eclipse-onchain-program-id>
 ```
 
 This will run the eclipse service continuously.
@@ -59,3 +72,11 @@ In the _Solana_ repository:
 ```sh
 ./bin/solana account <account-where-verification-results-stored>
 ```
+
+## Contributing
+
+Please feel free to open issues and pull requests.
+
+## License
+
+Project Eclipse is licensed under the GPLv3, primarily due to copyleft from [SnarkVM](https://github.com/AleoHQ/snarkvm/)
