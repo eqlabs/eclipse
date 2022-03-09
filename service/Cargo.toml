@@ -39,6 +39,7 @@ tokio = { version = "1.8", features = ["full"] }
 tracing = "0.1"
 jsonrpsee = { version = "0.7.0", features = ["macros", "http-client"]}
 jsonrpsee-core = { version = "0.7.0"}
-eclipse-aleo-verifier= { path = "../programs/aleo-verifier" }
+eclipse-aleo-verifier = { path = "../programs/aleo-verifier" }
+eclipse-uploader = { path = "../programs/uploader" }
 borsh = "0.9.1"
 

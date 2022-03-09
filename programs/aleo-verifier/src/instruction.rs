@@ -4,8 +4,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 pub enum EclipseInstruction {
     /// Accounts expected:
     ///
-    /// 0. `[signer]`: The account of the account initialise the verification
-    /// 1. `[writable]`: Aleo transactions verification results storage account
+    /// 0. `[SIGNER]`: The account of the account initialise the verification
+    /// 1. `[WRITE]`: Aleo transactions verification results storage account
     /// 2. `[]`: Eclipse Program PDA account
     /// 3. `[]`: Aleo Program account
     /// 4. `[]`: System Program account

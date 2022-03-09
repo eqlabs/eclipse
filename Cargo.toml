@@ -1,2 +1,2 @@
 [workspace]
-members = ["service", "programs/aleo-verifier"]
+members = ["service", "programs/aleo-verifier", "programs/uploader"]

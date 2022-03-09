@@ -31,6 +31,7 @@ use {
 };
 
 mod aleo_proof;
+mod uploader;
 
 struct Eclipse {
     solana_client: RpcClient,
@@ -91,11 +92,18 @@ async fn main() -> anyhow::Result<()> {
             SubCommand::with_name("verify_proofs")
                 .about("Call Eclipse Onchain Program to verify Aleo Transaction Proof")
                 .arg(
-                    Arg::with_name("eclipse_program_id")
-                        .long("eclipse_program_id")
+                    Arg::with_name("uploader_program_id")
+                        .long("uploader_program_id")
                         .value_name("PUBKEY")
                         .takes_value(true)
-                        .help("Eclipse onchain program id"),
+                        .help("Eclipse on-chain uploader program id"),
+                )
+                .arg(
+                    Arg::with_name("verifier_program_id")
+                        .long("verifier_program_id")
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .help("Eclipse on-chain Aleo verifier program id"),
                 ),
         )
         .get_matches();
@@ -120,15 +128,21 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    let eclipse_program_id;
+    let verifier_program_id;
+    let uploader_program_id;
     let _ = match matches.subcommand() {
         ("verify_proofs", Some(args)) => {
-            eclipse_program_id = Pubkey::new(
-                &bs58::decode(value_of::<String>(args, "eclipse_program_id").unwrap())
+            uploader_program_id = Pubkey::new(
+                &bs58::decode(value_of::<String>(args, "uploader_program_id").unwrap())
                     .into_vec()
                     .unwrap(),
             );
-            eclipse.verify_proofs(&eclipse_program_id)
+            verifier_program_id = Pubkey::new(
+                &bs58::decode(value_of::<String>(args, "verifier_program_id").unwrap())
+                    .into_vec()
+                    .unwrap(),
+            );
+            eclipse.verify_proofs(&uploader_program_id, &verifier_program_id)
         }
         _ => unreachable!(),
     }
@@ -142,7 +156,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 impl Eclipse {
-    async fn verify_proofs(&self, eclipse_program_id: &Pubkey) -> Result<()> {
+    async fn verify_proofs(&self, uploader_program_id: &Pubkey, verifier_program_id: &Pubkey) -> Result<()> {
         let mut cur_block: Block<Testnet2>;
         let mut prev_block: Option<Block<Testnet2>> = None;
 
@@ -169,7 +183,7 @@ impl Eclipse {
             }
 
             println!("processing block");
-            self.process_block(&cur_block, eclipse_program_id).await?;
+            self.process_block(&cur_block, uploader_program_id, verifier_program_id).await?;
 
             prev_block = Some(cur_block);
         }
@@ -178,7 +192,8 @@ impl Eclipse {
     async fn process_block(
         &self,
         block: &Block<Testnet2>,
-        eclipse_program_id: &Pubkey,
+        uploader_program_id: &Pubkey,
+        verifier_program_id: &Pubkey,
     ) -> anyhow::Result<()> {
         for tx_id in block.transactions().transaction_ids() {
             let response: Result<serde_json::Value, _> = self
@@ -203,7 +218,7 @@ impl Eclipse {
                         Ok(tx) => {
                             let input_bytes = tx.transaction.transaction_id().to_bytes_le()?;
                             println!("length of input_bytes: {}", input_bytes.len());
-                            self.command_verify_proof(input_bytes.as_ref(), eclipse_program_id)
+                            self.command_verify_proof(input_bytes.as_ref(), verifier_program_id)
                                 .await?;
                         }
                         Err(err) => {

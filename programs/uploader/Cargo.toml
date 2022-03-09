@@ -1,0 +1,16 @@
+[package]
+name = "eclipse-uploader"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+no-entrypoint = []
+
+[dependencies]
+nom = "7.1.0"
+num_enum = "0.5.7"
+serde = { version = "1.0.127", features = ["derive"] }
+solana-program = { version = "1.9.8" }
+
+[lib]
+crate-type = ["cdylib", "lib"]
