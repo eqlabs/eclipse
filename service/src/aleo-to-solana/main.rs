@@ -251,7 +251,7 @@ impl Eclipse {
                 AccountMeta::new_readonly(aleo_program_id, false),
                 AccountMeta::new_readonly(system_program::id(), false),
             ],
-            data: eclipse_onchain_program::instruction::EclipseInstruction::VerifyAleoTransaction {
+            data: eclipse_aleo_verifier::instruction::EclipseInstruction::VerifyAleoTransaction {
                 tx_id: data.to_vec(),
             }
             .try_to_vec()?,
