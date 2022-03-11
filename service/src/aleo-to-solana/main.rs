@@ -1,6 +1,5 @@
 use {
     anyhow::Result,
-    borsh::BorshSerialize,
     clap::{
         crate_description, crate_name, crate_version, value_t, App, AppSettings, Arg, SubCommand,
     },
@@ -35,7 +34,8 @@ mod uploader;
 
 struct Eclipse {
     solana_client: RpcClient,
-    solana_keypair: Keypair,
+    author_keypair: Keypair,
+    payer_keypair: Keypair,
     snarkos_client: HttpClient,
 }
 
@@ -62,13 +62,22 @@ async fn main() -> anyhow::Result<()> {
             }
         })
         .arg(
-            Arg::with_name("solana_keypair")
-                .long("solana_keypair")
+            Arg::with_name("author_keypair")
+                .long("author_keypair")
                 .validator(is_keypair)
                 .value_name("KEYPAIR")
                 .takes_value(true)
                 .required(true)
                 .help("Solana signer keypair path"),
+        )
+        .arg(
+            Arg::with_name("payer_keypair")
+                .long("payer_keypair")
+                .validator(is_keypair)
+                .value_name("KEYPAIR")
+                .takes_value(true)
+                .required(true)
+                .help("Solana payer keypair path"),
         )
         .arg(
             Arg::with_name("solana_json_rpc_url")
@@ -116,14 +125,17 @@ async fn main() -> anyhow::Result<()> {
         let solana_json_rpc_url = value_t!(matches, "solana_json_rpc_url", String)
             .unwrap_or_else(|_| cli_config.json_rpc_url.clone());
 
-        let solana_keypair =
-            keypair_of(&matches, "solana_keypair").expect("invalid solana keypair");
+        let author_keypair =
+            keypair_of(&matches, "author_keypair").expect("invalid solana author keypair");
+        let payer_keypair =
+            keypair_of(&matches, "payer_keypair").expect("invalid solana payer keypair");
         let snarkos_client = HttpClientBuilder::default()
             .build(matches.value_of("snarkos_json_rpc_url").unwrap())?;
 
         Eclipse {
             solana_client: RpcClient::new(solana_json_rpc_url),
-            solana_keypair,
+            author_keypair,
+            payer_keypair,
             snarkos_client,
         }
     };
@@ -216,9 +228,15 @@ impl Eclipse {
 
                     match response {
                         Ok(tx) => {
-                            let input_bytes = tx.transaction.transaction_id().to_bytes_le()?;
-                            println!("length of input_bytes: {}", input_bytes.len());
-                            self.command_verify_proof(input_bytes.as_ref(), verifier_program_id)
+                            let tx_bytes = tx.transaction.to_bytes_le()?;
+
+
+                            // Upload Aleo transaction to Solana Account
+                            let tx_account = uploader::upload(&self.solana_client, uploader_program_id, &self.author_keypair, &self.payer_keypair, tx_bytes.as_ref()).await?;
+
+                            let tx_id_bytes = tx.transaction.transaction_id().to_bytes_le()?;
+                            println!("length of input_bytes: {}", tx_id_bytes.len());
+                            self.command_verify_proof(tx_id_bytes.as_ref(), verifier_program_id, &tx_account)
                                 .await?;
                         }
                         Err(err) => {
@@ -237,8 +255,9 @@ impl Eclipse {
 
     async fn command_verify_proof(
         &self,
-        data: &[u8],
+        tx_id: &[u8],
         eclipse_program_id: &Pubkey,
+        tx_account: &Pubkey,
     ) -> anyhow::Result<()> {
         let aleo_program_id = Pubkey::from_str("A1eoProof1111111111111111111111111111111111")
             .expect("failed to set program_id");
@@ -247,29 +266,22 @@ impl Eclipse {
         let (state_account_pubkey, _) = Pubkey::find_program_address(
             &[
                 b"AleoTx".as_ref(),
-                data,
-                self.solana_keypair.pubkey().as_ref(),
+                tx_id,
+                self.author_keypair.pubkey().as_ref(),
             ],
             eclipse_program_id,
         );
 
-        // Account for signing for CPI
-        let (pda_account_pubkey, _) =
-            Pubkey::find_program_address(&[b"eclipse"], eclipse_program_id);
-
         let instruction = Instruction {
             program_id: *eclipse_program_id,
             accounts: vec![
-                AccountMeta::new(self.solana_keypair.pubkey(), true),
+                AccountMeta::new(self.author_keypair.pubkey(), true),
                 AccountMeta::new(state_account_pubkey, false),
-                AccountMeta::new(pda_account_pubkey, false),
+                AccountMeta::new(*tx_account, false),
                 AccountMeta::new_readonly(aleo_program_id, false),
                 AccountMeta::new_readonly(system_program::id(), false),
             ],
-            data: eclipse_aleo_verifier::instruction::EclipseInstruction::VerifyAleoTransaction {
-                tx_id: data.to_vec(),
-            }
-            .try_to_vec()?,
+            data: tx_id.to_vec(),
         };
 
         let latest_blockhash = self
@@ -277,9 +289,9 @@ impl Eclipse {
             .get_latest_blockhash()
             .expect("failed to fetch latest blockhash");
 
-        let message = Message::new(&[instruction], Some(&self.solana_keypair.pubkey()));
+        let message = Message::new(&[instruction], Some(&self.author_keypair.pubkey()));
         let transaction =
-            SolanaTransaction::new(&[&self.solana_keypair], message, latest_blockhash);
+            SolanaTransaction::new(&[&self.author_keypair], message, latest_blockhash);
 
         self.send_transaction(transaction).await?;
         println!("Verification stored at Account: {:?}", state_account_pubkey);

@@ -13,22 +13,29 @@ use {
 
 const MAX_CHUNK_SIZE: usize = 768;
 
+fn adler32(data: &[u8]) -> u32 {
+    let mut hash = adler32::RollingAdler32::new();
+    hash.update_buffer(data);
+    hash.hash()
+}
+
 pub async fn upload(
     solana_client: &RpcClient,
     program_id: &Pubkey,
     author: &Keypair,
     payer: &Keypair,
     data: &[u8],
-) -> anyhow::Result<()> {
-    // Data Bucket Account
-    let (data_bucket_account_pubkey, bump_seed) = Pubkey::find_program_address(
-        &[b"solana-data-packer".as_ref(), author.pubkey().as_ref()],
-        program_id,
-    );
-
+) -> anyhow::Result<Pubkey> {
     let data = data.to_vec();
     let total_size = data.len();
     let (mut chunk, mut data) = data.split_at(768);
+
+    // Data Bucket Account
+    let adler_csum = adler32(chunk);
+    let (data_bucket_account_pubkey, bump_seed) = Pubkey::find_program_address(
+        &[b"solana-data-packer".as_ref(), author.pubkey().as_ref(), adler_csum.to_be_bytes().as_slice()],
+        program_id,
+    );
 
     println!("Saving data to account: {:?}", data_bucket_account_pubkey);
 
@@ -97,12 +104,7 @@ pub async fn upload(
         offset += chunk.len();
     }
 
-    println!(
-        "Verification stored at Account: {:?}",
-        data_bucket_account_pubkey
-    );
-
-    Ok(())
+    Ok(data_bucket_account_pubkey)
 }
 
 async fn send_transaction(

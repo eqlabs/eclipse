@@ -13,6 +13,7 @@ name = "aleo-to-solana"
 path = "src/aleo-to-solana/main.rs"
 
 [dependencies]
+adler32 = "1.2.0"
 bs58 = "0.4.0"
 clap = "2.33.1"
 derivative = "2"

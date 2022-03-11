@@ -38,6 +38,12 @@ pub fn process_instruction(
     }
 }
 
+fn adler32(data: &[u8]) -> u32 {
+    let mut hash = adler32::RollingAdler32::new();
+    hash.update_buffer(data);
+    hash.hash()
+}
+
 pub struct Processor;
 impl Processor {
     fn create_bucket(
@@ -66,14 +72,17 @@ impl Processor {
             ProgramError::MissingRequiredSignature
         })?;
 
-        msg!("constructing program address");
-
         // Use a derived address to ensure that an address table can never be
         // initialized more than once at the same address.
+        let adler_csum = adler32(data);
+        let adler_csum = adler_csum.to_be_bytes();
+        let adler_csum = adler_csum.as_slice();
+
         let derived_data_bucket_key = Pubkey::create_program_address(
             &[
                 b"solana-data-packer".as_ref(),
                 authority_key.as_ref(),
+                adler_csum,
                 &[bump_seed],
             ],
             program_id,
@@ -120,14 +129,15 @@ impl Processor {
             ),
             &[
                 data_bucket_account.clone(),
-                // the signer of this forwarded invoke instruction
-                // just so happens to be the same account as the authority_key
-                payer_account.clone(),
-                // we need to account of the program being called
+                authority_account.clone(),
                 system_program_account.clone(),
             ],
-            // this is as slice of 1 ele which is also a slice
-            &[&[b"solana-data-packer", authority_key.as_ref(), &[bump_seed]]],
+            &[&[
+                b"solana-data-packer",
+                authority_key.as_ref(),
+                adler_csum,
+                &[bump_seed],
+            ]],
         )?;
 
         msg!("storing data on the data bucket account");
