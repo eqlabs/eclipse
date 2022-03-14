@@ -65,8 +65,6 @@ impl Processor {
             ProgramError::MissingRequiredSignature
         })?;
 
-        msg!("accounts parsed.");
-
         let payer_key = *payer_account.signer_key().ok_or_else(|| {
             msg!("Payer account must be a signer");
             ProgramError::MissingRequiredSignature
@@ -88,8 +86,6 @@ impl Processor {
             program_id,
         )?;
 
-        msg!("constructed program address");
-
         let data_bucket_key = *data_bucket_account.unsigned_key();
         if data_bucket_key != derived_data_bucket_key {
             msg!(
@@ -109,15 +105,11 @@ impl Processor {
             data: data.to_vec(),
         };
 
-        msg!("constructed data bucket object");
-
         let rent = Rent::default();
         let required_lamports = rent
             .minimum_balance(data_bucket_len)
             .max(1)
             .saturating_sub(data_bucket_account.lamports());
-
-        msg!("creating the data bucket");
 
         invoke_signed(
             &system_instruction::create_account(
@@ -139,8 +131,6 @@ impl Processor {
                 &[bump_seed],
             ]],
         )?;
-
-        msg!("storing data on the data bucket account");
 
         // Finally store the data in the bucket.
         data_bucket_account

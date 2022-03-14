@@ -173,18 +173,18 @@ impl Eclipse {
         let mut prev_block: Option<Block<Testnet2>> = None;
 
         loop {
-            println!("fetching latestblock");
+            println!("Fetching latestblock from Aleo RPC-API");
             let response: serde_json::Value =
                 self.snarkos_client.request("latestblock", None).await?;
 
-            println!("parsing block");
+            println!("Parsing block");
             cur_block = serde_json::from_value(response)?;
 
-            println!("checking if it's new");
+            println!("Verifying it is new block");
             if let Some(ref pb) = prev_block {
                 if pb.hash() == cur_block.hash() {
                     println!(
-                        "sleeping: prev_block == cur_block ({} == {})",
+                        "Sleeping: prev_block == cur_block ({} == {})",
                         pb.hash(),
                         cur_block.hash()
                     );
@@ -194,7 +194,7 @@ impl Eclipse {
                 }
             }
 
-            println!("processing block");
+            println!("Processing block");
             self.process_block(&cur_block, uploader_program_id, verifier_program_id).await?;
 
             prev_block = Some(cur_block);
@@ -235,7 +235,6 @@ impl Eclipse {
                             let tx_account = uploader::upload(&self.solana_client, uploader_program_id, &self.author_keypair, &self.payer_keypair, tx_bytes.as_ref()).await?;
 
                             let tx_id_bytes = tx.transaction.transaction_id().to_bytes_le()?;
-                            println!("length of input_bytes: {}", tx_id_bytes.len());
                             self.command_verify_proof(tx_id_bytes.as_ref(), verifier_program_id, &tx_account)
                                 .await?;
                         }
@@ -302,11 +301,9 @@ impl Eclipse {
         &self,
         transaction: SolanaTransaction,
     ) -> solana_client::client_error::Result<()> {
-        println!("Sending transaction...");
-        let result = self
+        self
             .solana_client
-            .send_and_confirm_transaction_with_spinner(&transaction);
-        println!("Solana onchain program result: {:?}", result);
+            .send_and_confirm_transaction_with_spinner(&transaction)?;
         Ok(())
     }
 }

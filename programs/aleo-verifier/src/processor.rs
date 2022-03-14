@@ -39,7 +39,6 @@ impl Processor {
         let aleo_program = next_account_info(account_info_iter)?;
         let system_program_account = next_account_info(account_info_iter)?;
 
-        msg!("validating state account PDA");
         let (verified_pda, verified_acc_bump) = Pubkey::find_program_address(
             &[
                 b"AleoTx".as_ref(),
@@ -52,9 +51,7 @@ impl Processor {
             return Err(EclipseError::InvalidStateAccount.into());
         }
 
-        msg!("preparing to call native aleo verifier");
-
-        // Call AleoVerifier native program
+        // Call AleoVerifier native program to verify that Aleo tx proofs are valid.
         let aleo_verifier_id = Pubkey::from_str(ALEO_VERIFIER).expect("failed to set program_id");
         let instruction = Instruction::new_with_bytes(
             aleo_verifier_id,
@@ -62,17 +59,18 @@ impl Processor {
             vec![AccountMeta::new_readonly(*tx_data_account.key, false)],
         );
         let (_, bump_seed) = Pubkey::find_program_address(&[b"eclipse"], program_id);
-        msg!("invoking native aleo verifier");
         invoke_signed(
             &instruction,
             &[aleo_program.clone(), tx_data_account.clone()],
             &[&[&b"eclipse"[..], &[bump_seed]]],
         )?;
 
-        msg!("aleo tx successfully verified");
-
-        // Only successfully verified tx are stored
-        // length is bump for the account + authority_account + tx_id
+        //
+        // AleoVerifier native program successfully returned. Now create PDA to store verification
+        // result.
+        //
+        // Only successfully verified tx are stored.
+        // Length is bump for the account + authority_account + tx_id.
         let stored_tx_len: usize = 1 + 32 + 32;
 
         let rent = Rent::get()?;
@@ -109,7 +107,9 @@ impl Processor {
         state.bump = bump_seed;
         state.authority = *authority_account.key;
         state.serialize(&mut &mut state_account.data.borrow_mut()[..])?;
-        msg!("New Verified Aleo Tx Stored at {:?}", state_account.key);
+
+        msg!("New verified Aleo Tx Stored at {:?}", state_account.key);
+
         Ok(())
     }
 }
