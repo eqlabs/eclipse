@@ -35,16 +35,18 @@ Details found [here](https://docs.solana.com/developing/test-validator) on the `
 
 `export RUST_LOG=solana_runtime::system_instruction_processor=trace,solana_runtime::message_processor=trace,solana_bpf_loader=trace,solana_rbpf=trace`
 
-#### Onchain Program
+#### Onchain Programs
 
-Now compile the onchain program in this repository in `/program` by `cargo build-bpf`.
-This will output a file in `/program/target/deploy/eclipse_onchain_program.so`
+Now compile the on-chain programs. Under the `/programs/aleo-verifier` and
+`/programs/uploader` by `cargo build-bpf --sdk=<path to solana>/sdk/bpf`. This will output files in
+`/target/deploy/eclipse_aleo_verifier.so` and `/target/deploy/eclipse_uploader.so`
 
 Then use the previously compiled Eclipse version of the solana binary to deploy the program.
 In the _Solana_ repository:
 
 ```sh
-./bin/solana program deploy <path-to-the-eclipse_onchain_program.so>
+./bin/solana program deploy <path-to-the-eclipse_aleo_verifier.so>
+./bin/solana program deploy <path-to-the-eclipse_uploader.so>
 ```
 
 Take a note of the program-id logged here for next step.
@@ -56,9 +58,14 @@ Run eclipse service by
 ```sh
 
 ```bash
-$ git clone https://github.com/eqlabs/eclipse && cd eclipse/src/aleo-to-solana
-$ cargo build
-$ ./target/debug/aleo-to-solana --solana_keypair <default-path-to-solana-test-verifier-config-keypair> verify_proofs --eclipse_program_id <Eclipse-onchain-program-id>
+$ git clone https://github.com/eqlabs/eclipse && cd eclipse/service/src/aleo-to-solana
+$ cargo build // tested on 1.61.0 nightly
+$ ./target/debug/aleo-to-solana \
+--author_keypair <default-path-to-solana-test-verifier-config-keypair> \
+--payer_keypair <default-path-to-solana-test-verifier-config-keypair> \
+verify_proofs \
+--uploader_program_id <eclipse-onchain-uploader-program-id> \
+--verifier_program_id <eclipse-onchain-aleo-verifier-program-id>
 ```
 
 This will run the eclipse service continuously.

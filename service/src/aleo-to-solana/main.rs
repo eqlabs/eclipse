@@ -1,6 +1,5 @@
 use {
     anyhow::Result,
-    borsh::BorshSerialize,
     clap::{
         crate_description, crate_name, crate_version, value_t, App, AppSettings, Arg, SubCommand,
     },
@@ -31,10 +30,12 @@ use {
 };
 
 mod aleo_proof;
+mod uploader;
 
 struct Eclipse {
     solana_client: RpcClient,
-    solana_keypair: Keypair,
+    author_keypair: Keypair,
+    payer_keypair: Keypair,
     snarkos_client: HttpClient,
 }
 
@@ -61,13 +62,22 @@ async fn main() -> anyhow::Result<()> {
             }
         })
         .arg(
-            Arg::with_name("solana_keypair")
-                .long("solana_keypair")
+            Arg::with_name("author_keypair")
+                .long("author_keypair")
                 .validator(is_keypair)
                 .value_name("KEYPAIR")
                 .takes_value(true)
                 .required(true)
                 .help("Solana signer keypair path"),
+        )
+        .arg(
+            Arg::with_name("payer_keypair")
+                .long("payer_keypair")
+                .validator(is_keypair)
+                .value_name("KEYPAIR")
+                .takes_value(true)
+                .required(true)
+                .help("Solana payer keypair path"),
         )
         .arg(
             Arg::with_name("solana_json_rpc_url")
@@ -91,11 +101,18 @@ async fn main() -> anyhow::Result<()> {
             SubCommand::with_name("verify_proofs")
                 .about("Call Eclipse Onchain Program to verify Aleo Transaction Proof")
                 .arg(
-                    Arg::with_name("eclipse_program_id")
-                        .long("eclipse_program_id")
+                    Arg::with_name("uploader_program_id")
+                        .long("uploader_program_id")
                         .value_name("PUBKEY")
                         .takes_value(true)
-                        .help("Eclipse onchain program id"),
+                        .help("Eclipse on-chain uploader program id"),
+                )
+                .arg(
+                    Arg::with_name("verifier_program_id")
+                        .long("verifier_program_id")
+                        .value_name("PUBKEY")
+                        .takes_value(true)
+                        .help("Eclipse on-chain Aleo verifier program id"),
                 ),
         )
         .get_matches();
@@ -108,27 +125,36 @@ async fn main() -> anyhow::Result<()> {
         let solana_json_rpc_url = value_t!(matches, "solana_json_rpc_url", String)
             .unwrap_or_else(|_| cli_config.json_rpc_url.clone());
 
-        let solana_keypair =
-            keypair_of(&matches, "solana_keypair").expect("invalid solana keypair");
+        let author_keypair =
+            keypair_of(&matches, "author_keypair").expect("invalid solana author keypair");
+        let payer_keypair =
+            keypair_of(&matches, "payer_keypair").expect("invalid solana payer keypair");
         let snarkos_client = HttpClientBuilder::default()
             .build(matches.value_of("snarkos_json_rpc_url").unwrap())?;
 
         Eclipse {
             solana_client: RpcClient::new(solana_json_rpc_url),
-            solana_keypair,
+            author_keypair,
+            payer_keypair,
             snarkos_client,
         }
     };
 
-    let eclipse_program_id;
+    let verifier_program_id;
+    let uploader_program_id;
     let _ = match matches.subcommand() {
         ("verify_proofs", Some(args)) => {
-            eclipse_program_id = Pubkey::new(
-                &bs58::decode(value_of::<String>(args, "eclipse_program_id").unwrap())
+            uploader_program_id = Pubkey::new(
+                &bs58::decode(value_of::<String>(args, "uploader_program_id").unwrap())
                     .into_vec()
                     .unwrap(),
             );
-            eclipse.verify_proofs(&eclipse_program_id)
+            verifier_program_id = Pubkey::new(
+                &bs58::decode(value_of::<String>(args, "verifier_program_id").unwrap())
+                    .into_vec()
+                    .unwrap(),
+            );
+            eclipse.verify_proofs(&uploader_program_id, &verifier_program_id)
         }
         _ => unreachable!(),
     }
@@ -142,23 +168,23 @@ async fn main() -> anyhow::Result<()> {
 }
 
 impl Eclipse {
-    async fn verify_proofs(&self, eclipse_program_id: &Pubkey) -> Result<()> {
+    async fn verify_proofs(&self, uploader_program_id: &Pubkey, verifier_program_id: &Pubkey) -> Result<()> {
         let mut cur_block: Block<Testnet2>;
         let mut prev_block: Option<Block<Testnet2>> = None;
 
         loop {
-            println!("fetching latestblock");
+            println!("Fetching latestblock from Aleo RPC-API");
             let response: serde_json::Value =
                 self.snarkos_client.request("latestblock", None).await?;
 
-            println!("parsing block");
+            println!("Parsing block");
             cur_block = serde_json::from_value(response)?;
 
-            println!("checking if it's new");
+            println!("Verifying it is new block");
             if let Some(ref pb) = prev_block {
                 if pb.hash() == cur_block.hash() {
                     println!(
-                        "sleeping: prev_block == cur_block ({} == {})",
+                        "Sleeping: prev_block == cur_block ({} == {})",
                         pb.hash(),
                         cur_block.hash()
                     );
@@ -168,8 +194,8 @@ impl Eclipse {
                 }
             }
 
-            println!("processing block");
-            self.process_block(&cur_block, eclipse_program_id).await?;
+            println!("Processing block");
+            self.process_block(&cur_block, uploader_program_id, verifier_program_id).await?;
 
             prev_block = Some(cur_block);
         }
@@ -178,7 +204,8 @@ impl Eclipse {
     async fn process_block(
         &self,
         block: &Block<Testnet2>,
-        eclipse_program_id: &Pubkey,
+        uploader_program_id: &Pubkey,
+        verifier_program_id: &Pubkey,
     ) -> anyhow::Result<()> {
         for tx_id in block.transactions().transaction_ids() {
             let response: Result<serde_json::Value, _> = self
@@ -201,9 +228,14 @@ impl Eclipse {
 
                     match response {
                         Ok(tx) => {
-                            let input_bytes = tx.transaction.transaction_id().to_bytes_le()?;
-                            println!("length of input_bytes: {}", input_bytes.len());
-                            self.command_verify_proof(input_bytes.as_ref(), eclipse_program_id)
+                            let tx_bytes = tx.transaction.to_bytes_le()?;
+
+
+                            // Upload Aleo transaction to Solana Account
+                            let tx_account = uploader::upload(&self.solana_client, uploader_program_id, &self.author_keypair, &self.payer_keypair, tx_bytes.as_ref()).await?;
+
+                            let tx_id_bytes = tx.transaction.transaction_id().to_bytes_le()?;
+                            self.command_verify_proof(tx_id_bytes.as_ref(), verifier_program_id, &tx_account)
                                 .await?;
                         }
                         Err(err) => {
@@ -222,8 +254,9 @@ impl Eclipse {
 
     async fn command_verify_proof(
         &self,
-        data: &[u8],
+        tx_id: &[u8],
         eclipse_program_id: &Pubkey,
+        tx_account: &Pubkey,
     ) -> anyhow::Result<()> {
         let aleo_program_id = Pubkey::from_str("A1eoProof1111111111111111111111111111111111")
             .expect("failed to set program_id");
@@ -232,29 +265,22 @@ impl Eclipse {
         let (state_account_pubkey, _) = Pubkey::find_program_address(
             &[
                 b"AleoTx".as_ref(),
-                data,
-                self.solana_keypair.pubkey().as_ref(),
+                tx_id,
+                self.author_keypair.pubkey().as_ref(),
             ],
             eclipse_program_id,
         );
 
-        // Account for signing for CPI
-        let (pda_account_pubkey, _) =
-            Pubkey::find_program_address(&[b"eclipse"], eclipse_program_id);
-
         let instruction = Instruction {
             program_id: *eclipse_program_id,
             accounts: vec![
-                AccountMeta::new(self.solana_keypair.pubkey(), true),
+                AccountMeta::new(self.author_keypair.pubkey(), true),
                 AccountMeta::new(state_account_pubkey, false),
-                AccountMeta::new(pda_account_pubkey, false),
+                AccountMeta::new(*tx_account, false),
                 AccountMeta::new_readonly(aleo_program_id, false),
                 AccountMeta::new_readonly(system_program::id(), false),
             ],
-            data: eclipse_onchain_program::instruction::EclipseInstruction::VerifyAleoTransaction {
-                tx_id: data.to_vec(),
-            }
-            .try_to_vec()?,
+            data: tx_id.to_vec(),
         };
 
         let latest_blockhash = self
@@ -262,9 +288,9 @@ impl Eclipse {
             .get_latest_blockhash()
             .expect("failed to fetch latest blockhash");
 
-        let message = Message::new(&[instruction], Some(&self.solana_keypair.pubkey()));
+        let message = Message::new(&[instruction], Some(&self.author_keypair.pubkey()));
         let transaction =
-            SolanaTransaction::new(&[&self.solana_keypair], message, latest_blockhash);
+            SolanaTransaction::new(&[&self.author_keypair], message, latest_blockhash);
 
         self.send_transaction(transaction).await?;
         println!("Verification stored at Account: {:?}", state_account_pubkey);
@@ -275,11 +301,9 @@ impl Eclipse {
         &self,
         transaction: SolanaTransaction,
     ) -> solana_client::client_error::Result<()> {
-        println!("Sending transaction...");
-        let result = self
+        self
             .solana_client
-            .send_and_confirm_transaction_with_spinner(&transaction);
-        println!("Solana onchain program result: {:?}", result);
+            .send_and_confirm_transaction_with_spinner(&transaction)?;
         Ok(())
     }
 }
