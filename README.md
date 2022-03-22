@@ -58,7 +58,7 @@ Run eclipse service by
 ```sh
 
 ```bash
-$ git clone https://github.com/eqlabs/eclipse && cd eclipse/src/aleo-to-solana
+$ git clone https://github.com/eqlabs/eclipse && cd eclipse/service/src/aleo-to-solana
 $ cargo build
 $ ./target/debug/aleo-to-solana \
 --author_keypair <default-path-to-solana-test-verifier-config-keypair> \
