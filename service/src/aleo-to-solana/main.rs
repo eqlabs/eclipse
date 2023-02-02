@@ -1,3 +1,4 @@
+use tokio::time::sleep;
 use {
     anyhow::Result,
     clap::{
@@ -26,7 +27,7 @@ use {
     solana_sdk::{
         signature::Signer, signer::keypair::Keypair, transaction::Transaction as SolanaTransaction,
     },
-    std::{process::exit, str::FromStr, thread::sleep, time::Duration},
+    std::{process::exit, str::FromStr, time::Duration},
 };
 
 mod aleo_proof;
@@ -40,7 +41,7 @@ struct Eclipse {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<()> {
     solana_logger::setup_with("solana=debug");
 
     let matches = App::new(crate_name!())
@@ -160,7 +161,7 @@ async fn main() -> anyhow::Result<()> {
     }
     .await
     .map_err(|err| {
-        eprintln!("{}", err);
+        eprintln!("{err}");
         exit(1);
     });
 
@@ -168,7 +169,11 @@ async fn main() -> anyhow::Result<()> {
 }
 
 impl Eclipse {
-    async fn verify_proofs(&self, uploader_program_id: &Pubkey, verifier_program_id: &Pubkey) -> Result<()> {
+    async fn verify_proofs(
+        &self,
+        uploader_program_id: &Pubkey,
+        verifier_program_id: &Pubkey,
+    ) -> Result<()> {
         let mut cur_block: Block<Testnet2>;
         let mut prev_block: Option<Block<Testnet2>> = None;
 
@@ -189,13 +194,14 @@ impl Eclipse {
                         cur_block.hash()
                     );
                     // Sleep
-                    sleep(Duration::from_millis(5000));
+                    sleep(Duration::from_millis(5000)).await;
                     continue;
                 }
             }
 
             println!("Processing block");
-            self.process_block(&cur_block, uploader_program_id, verifier_program_id).await?;
+            self.process_block(&cur_block, uploader_program_id, verifier_program_id)
+                .await?;
 
             prev_block = Some(cur_block);
         }
@@ -230,21 +236,31 @@ impl Eclipse {
                         Ok(tx) => {
                             let tx_bytes = tx.transaction.to_bytes_le()?;
 
-
                             // Upload Aleo transaction to Solana Account
-                            let tx_account = uploader::upload(&self.solana_client, uploader_program_id, &self.author_keypair, &self.payer_keypair, tx_bytes.as_ref()).await?;
+                            let tx_account = uploader::upload(
+                                &self.solana_client,
+                                uploader_program_id,
+                                &self.author_keypair,
+                                &self.payer_keypair,
+                                tx_bytes.as_ref(),
+                            )
+                            .await?;
 
                             let tx_id_bytes = tx.transaction.transaction_id().to_bytes_le()?;
-                            self.command_verify_proof(tx_id_bytes.as_ref(), verifier_program_id, &tx_account)
-                                .await?;
+                            self.command_verify_proof(
+                                tx_id_bytes.as_ref(),
+                                verifier_program_id,
+                                &tx_account,
+                            )
+                            .await?;
                         }
                         Err(err) => {
-                            println!("error: failed to deserialize transaction: {}", err);
+                            println!("error: failed to deserialize transaction: {err}");
                         }
                     }
                 }
                 Err(err) => {
-                    println!("failed to get transaction: {}", err);
+                    println!("failed to get transaction: {err}");
                 }
             }
         }
@@ -293,7 +309,7 @@ impl Eclipse {
             SolanaTransaction::new(&[&self.author_keypair], message, latest_blockhash);
 
         self.send_transaction(transaction).await?;
-        println!("Verification stored at Account: {:?}", state_account_pubkey);
+        println!("Verification stored at Account: {state_account_pubkey:?}");
         Ok(())
     }
 
@@ -301,8 +317,7 @@ impl Eclipse {
         &self,
         transaction: SolanaTransaction,
     ) -> solana_client::client_error::Result<()> {
-        self
-            .solana_client
+        self.solana_client
             .send_and_confirm_transaction_with_spinner(&transaction)?;
         Ok(())
     }
