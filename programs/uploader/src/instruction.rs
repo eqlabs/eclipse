@@ -78,7 +78,7 @@ pub enum ProgramInstruction<'a> {
     },
 }
 
-fn instruction_type<'a>(input: &'a [u8]) -> IResult<&'a [u8], InstructionType> {
+fn instruction_type(input: &[u8]) -> IResult<&[u8], InstructionType> {
     let (rest, kind): (&[u8], &[u8]) = alt((
         tag(InstructionType::CreateBucket),
         tag(InstructionType::PutIntoBucket),
@@ -92,7 +92,7 @@ fn instruction_type<'a>(input: &'a [u8]) -> IResult<&'a [u8], InstructionType> {
 }
 
 fn be_u32(input: &[u8]) -> IResult<&[u8], u32> {
-    Ok(u32(nom::number::Endianness::Big)(input)?)
+    u32(nom::number::Endianness::Big)(input)
 }
 
 fn create_bucket(input: &[u8]) -> IResult<&[u8], ProgramInstruction> {
@@ -115,8 +115,8 @@ fn put_into_bucket(input: &[u8]) -> IResult<&[u8], ProgramInstruction> {
     Ok((data, ProgramInstruction::PutIntoBucket { data, offset }))
 }
 
-pub fn parse_program_instruction<'a>(
-    instruction_data: &'a [u8],
+pub fn parse_program_instruction(
+    instruction_data: &[u8],
 ) -> Result<ProgramInstruction, ProgramError> {
     let (rest, it) = instruction_type(instruction_data).finish().unwrap();
     match it {

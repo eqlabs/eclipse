@@ -17,7 +17,7 @@ Eclipse is written in Rust, and therefore uses the [Rust toolchain](https://www.
 
 We need to compile the Eclipse version of the Solana Node.
 For PoC purpose, the easiest way is to compile the `Solana-test-validator` binary.
-In our Solana forked reposity root, run
+In our Solana forked repository root, run
 
 ```sh
 ./scripts/cargo-install-all.sh .

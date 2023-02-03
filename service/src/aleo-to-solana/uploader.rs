@@ -33,18 +33,23 @@ pub async fn upload(
     // Data Bucket Account
     let adler_csum = adler32(chunk);
     let (data_bucket_account_pubkey, bump_seed) = Pubkey::find_program_address(
-        &[b"solana-data-packer".as_ref(), author.pubkey().as_ref(), adler_csum.to_be_bytes().as_slice()],
+        &[
+            b"solana-data-packer".as_ref(),
+            author.pubkey().as_ref(),
+            adler_csum.to_be_bytes().as_slice(),
+        ],
         program_id,
     );
 
-    println!("Saving data to account: {:?}", data_bucket_account_pubkey);
+    println!("Saving data to account: {data_bucket_account_pubkey:?}");
 
     // First create the data bucket.
     let serialized_bucket = eclipse_uploader::instruction::ProgramInstruction::CreateBucket {
-            data: chunk,
-            size: total_size as u32,
-            bump_seed,
-        }.serialize();
+        data: chunk,
+        size: total_size as u32,
+        bump_seed,
+    }
+    .serialize();
 
     let instruction = Instruction {
         program_id: *program_id,
@@ -77,10 +82,11 @@ pub async fn upload(
             data = &[];
         }
 
-        let serialized_bucket = eclipse_uploader::instruction::ProgramInstruction::PutIntoBucket{
+        let serialized_bucket = eclipse_uploader::instruction::ProgramInstruction::PutIntoBucket {
             data: chunk,
             offset: offset as u32,
-        }.serialize();
+        }
+        .serialize();
 
         let instruction = Instruction {
             program_id: *program_id,
@@ -113,6 +119,6 @@ async fn send_transaction(
 ) -> solana_client::client_error::Result<()> {
     println!("Sending transaction...");
     let result = solana_client.send_and_confirm_transaction_with_spinner(&transaction);
-    println!("Solana onchain program result: {:?}", result);
+    println!("Solana onchain program result: {result:?}");
     result.map(|_| ())
 }

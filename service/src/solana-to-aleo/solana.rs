@@ -92,8 +92,7 @@ impl<T: eclipse::ProofGenerator> BlockProcessor<T> {
             }
 
             println!(
-                "current network slot: {}, processing slot {}",
-                current_network_slot, current_slot
+                "current network slot: {current_network_slot}, processing slot {current_slot}"
             );
 
             let blk_cfg = RpcBlockConfig {
@@ -127,11 +126,11 @@ impl<T: eclipse::ProofGenerator> BlockProcessor<T> {
                     match kind {
                         ClientErrorKind::RpcError(RpcError::RpcResponseError { code, .. }) => {
                             if code == JSON_RPC_SERVER_ERROR_LONG_TERM_STORAGE_SLOT_SKIPPED {
-                                println!("slot {} skipped, proceeding to next", current_slot);
+                                println!("slot {current_slot} skipped, proceeding to next");
                             }
                         }
                         _ => {
-                            println!("error: {}", kind);
+                            println!("error: {kind}");
                         }
                     };
 
@@ -147,7 +146,7 @@ impl<T: eclipse::ProofGenerator> BlockProcessor<T> {
     fn process_slot_transactions(&mut self, slot: Slot, txs: &[Transaction]) {
         // Filter Vote Program transactions.
         let txs = txs.iter().filter(|tx| {
-            (&tx.message.instructions).iter().any(|ci| {
+            tx.message.instructions.iter().any(|ci| {
                 tx.message.account_keys[usize::from(ci.program_id_index)] == vote::program::id()
             })
         });
@@ -156,7 +155,7 @@ impl<T: eclipse::ProofGenerator> BlockProcessor<T> {
             let msg = tx.message.serialize();
 
             tx.message.signer_keys().into_iter().for_each(|sk| {
-                (&tx.signatures).iter().for_each(|sig| {
+                tx.signatures.iter().for_each(|sig| {
                     if sig.verify(sk.as_ref(), &msg) {
                         println!("successfully verified signature; adding to slot signatures");
                         self.slot_votes.push_vote(
