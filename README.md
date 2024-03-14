@@ -56,8 +56,6 @@ Take a note of the program-id logged here for next step.
 Run eclipse service by
 
 ```sh
-
-```bash
 $ git clone https://github.com/eqlabs/eclipse && cd eclipse/service/src/aleo-to-solana
 $ cargo build // tested on 1.61.0 nightly
 $ ./target/debug/aleo-to-solana \
